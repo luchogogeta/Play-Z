@@ -15,6 +15,9 @@ anterior) de lo que esté sonando, todo desde una sola ventana.
   en [EarTrumpet](https://github.com/File-New-Project/EarTrumpet), para
   elegir a qué parlantes o auriculares sale el sonido sin tener que abrir
   la configuración de Windows.
+- **Volumen general**: un slider con mute para el volumen general del
+  sistema (todas las apps a la vez), disponible tanto en la ventana
+  completa como en el panelito de la bandeja.
 - **Controles multimedia**: muestra el título y artista de lo que se está
   reproduciendo y permite reproducir/pausar, pasar a la siguiente canción o
   volver a la anterior. Funciona con cualquier app compatible con los

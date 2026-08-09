@@ -44,3 +44,29 @@ def set_default_output_device(device_id: str) -> None:
     general.
     """
     AudioUtilities.SetDefaultDevice(device_id, roles=[ERole.eConsole, ERole.eMultimedia])
+
+
+def get_master_volume() -> tuple[float, bool]:
+    """Volumen general (0.0-1.0) y mute del dispositivo de salida actual."""
+    try:
+        endpoint = AudioUtilities.GetSpeakers().EndpointVolume
+        return endpoint.GetMasterVolumeLevelScalar(), bool(endpoint.GetMute())
+    except Exception:
+        return 1.0, False
+
+
+def set_master_volume(value: float) -> None:
+    """Fija el volumen general (0.0 a 1.0) del dispositivo de salida actual."""
+    value = max(0.0, min(1.0, value))
+    try:
+        AudioUtilities.GetSpeakers().EndpointVolume.SetMasterVolumeLevelScalar(value, None)
+    except Exception:
+        pass
+
+
+def set_master_muted(muted: bool) -> None:
+    """Silencia o reactiva el volumen general del dispositivo de salida actual."""
+    try:
+        AudioUtilities.GetSpeakers().EndpointVolume.SetMute(muted, None)
+    except Exception:
+        pass

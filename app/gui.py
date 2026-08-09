@@ -14,7 +14,13 @@ from tkinter import ttk
 
 from PIL import ImageTk
 
-from .audio_devices import list_output_devices, set_default_output_device
+from .audio_devices import (
+    get_master_volume,
+    list_output_devices,
+    set_default_output_device,
+    set_master_muted,
+    set_master_volume,
+)
 from .audio_sessions import AppAudioSession, list_app_sessions
 from .icons import extract_app_icon
 from .media_control import get_now_playing, next_track, play_pause, previous_track
@@ -24,8 +30,8 @@ from .tray import TrayIcon, build_icon_image
 
 REFRESH_MS = 1500
 WINDOW_WIDTH = 460
-EXPANDED_HEIGHT = 680
-COLLAPSED_HEIGHT = 370
+EXPANDED_HEIGHT = 720
+COLLAPSED_HEIGHT = 410
 SPI_GETWORKAREA = 0x0030
 
 
@@ -139,6 +145,70 @@ class VolumeSlider(tk.Canvas):
     def _on_button_release(self, event) -> None:
         self._dragging = False
         self._set_from_event(event, final=True)
+
+
+class MasterVolumeControl:
+    """Fila de volumen general del sistema (todas las apps a la vez), con
+    su propio mute — se usa tanto en la ventana completa como en el flyout."""
+
+    def __init__(self, parent: tk.Widget):
+        self.frame = tk.Frame(parent, bd=0, highlightthickness=0)
+        self._muted = False
+        self._colors: dict | None = None
+        self._bg_color = ""
+
+        self.mute_btn = tk.Button(
+            self.frame,
+            bd=0,
+            highlightthickness=0,
+            takefocus=0,
+            cursor="hand2",
+            font=(FONT, 11),
+            command=self._on_mute_toggle,
+        )
+        self.mute_btn.pack(side="left")
+
+        self.slider = VolumeSlider(self.frame, value=1.0, on_change=self._on_slider_change)
+        self.slider.pack(side="left", fill="x", expand=True, padx=(8, 8))
+
+        self.percent_label = tk.Label(self.frame, text="100%", font=(FONT, 9), width=4, anchor="e")
+        self.percent_label.pack(side="left")
+
+    def _on_slider_change(self, value: float) -> None:
+        set_master_volume(value)
+        self.percent_label.configure(text=f"{round(value * 100)}%")
+
+    def _on_mute_toggle(self) -> None:
+        self._muted = not self._muted
+        set_master_muted(self._muted)
+        self._update_mute_button()
+
+    def _update_mute_button(self) -> None:
+        if self._colors is None:
+            return
+        self.mute_btn.configure(
+            text="🔇" if self._muted else "🔊",
+            bg=self._bg_color,
+            fg=self._colors["danger"] if self._muted else self._colors["fg_muted"],
+            activebackground=self._colors["surface_alt"],
+        )
+
+    def refresh(self) -> None:
+        volume, muted = get_master_volume()
+        self.slider.set(volume)
+        self._muted = muted
+        self._update_mute_button()
+        if not self.slider.is_dragging:
+            self.percent_label.configure(text=f"{round(volume * 100)}%")
+
+    def apply_theme(self, colors: dict, bg_color: str) -> None:
+        self._colors = colors
+        self._bg_color = bg_color
+        self.frame.configure(bg=bg_color)
+        self.percent_label.configure(bg=bg_color, fg=colors["fg_muted"])
+        self.slider.configure(bg=bg_color)
+        self.slider.set_colors(track=colors["surface_alt"], fill=colors["accent"], thumb=colors["fg"])
+        self._update_mute_button()
 
 
 class AppRow:
@@ -347,6 +417,9 @@ class Flyout(tk.Toplevel):
         self.next_btn = MediaPanel._make_button(self.controls, "⏭", _do_next, size=13)
         self.next_btn.grid(row=0, column=2, padx=6)
 
+        self.master_volume = MasterVolumeControl(self.card)
+        self.master_volume.frame.pack(fill="x", padx=16, pady=(0, 16))
+
         self.bind("<FocusOut>", lambda e: self.hide())
 
     def refresh(self) -> None:
@@ -357,6 +430,7 @@ class Flyout(tk.Toplevel):
         else:
             self.title_label.configure(text=now_playing.title)
             self.artist_label.configure(text=now_playing.artist or "—")
+        self.master_volume.refresh()
 
     def apply_theme(self, colors: dict) -> None:
         self.configure(bg=colors["bg"])
@@ -367,6 +441,7 @@ class Flyout(tk.Toplevel):
         for btn in (self.prev_btn, self.next_btn):
             btn.configure(bg=colors["surface"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
         self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+        self.master_volume.apply_theme(colors, colors["surface"])
 
     def _position(self) -> None:
         self.update_idletasks()
@@ -463,6 +538,9 @@ class MainWindow(tk.Tk):
     def _build_layout(self) -> None:
         self._build_titlebar()
         self._build_output_selector()
+
+        self.master_volume = MasterVolumeControl(self)
+        self.master_volume.frame.pack(fill="x", padx=20, pady=(0, 16))
 
         self.media_panel = MediaPanel(self, self.colors)
         self.media_panel.frame.pack(fill="x", padx=20, pady=(0, 16))
@@ -565,7 +643,7 @@ class MainWindow(tk.Tk):
         self._device_by_name: dict[str, str] = {}
 
         self.output_row = tk.Frame(self, bd=0, highlightthickness=0)
-        self.output_row.pack(fill="x", padx=20, pady=(0, 14))
+        self.output_row.pack(fill="x", padx=20, pady=(0, 8))
 
         self.output_icon = tk.Label(self.output_row, text="🔊", font=(FONT, 11))
         self.output_icon.pack(side="left")
@@ -698,6 +776,7 @@ class MainWindow(tk.Tk):
         self.section_toggle.configure(bg=colors["bg"], fg=colors["fg_muted"])
         self.output_row.configure(bg=colors["bg"])
         self.output_icon.configure(bg=colors["bg"], fg=colors["fg_muted"])
+        self.master_volume.apply_theme(colors, colors["bg"])
         self.list_container.configure(bg=colors["bg"])
         self.canvas.configure(bg=colors["bg"])
         self.rows_frame.configure(bg=colors["bg"])
@@ -742,6 +821,7 @@ class MainWindow(tk.Tk):
     def _refresh_loop(self) -> None:
         self._refresh_sessions()
         self._refresh_output_devices()
+        self.master_volume.refresh()
         self.media_panel.refresh()
         if self.flyout.state() != "withdrawn":
             self.flyout.refresh()
