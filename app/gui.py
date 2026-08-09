@@ -14,6 +14,7 @@ from tkinter import ttk
 
 from PIL import ImageTk
 
+from .audio_devices import list_output_devices, set_default_output_device
 from .audio_sessions import AppAudioSession, list_app_sessions
 from .media_control import get_now_playing, next_track, play_pause, previous_track
 from .media_control import run as run_async
@@ -22,8 +23,8 @@ from .tray import TrayIcon, build_icon_image
 
 REFRESH_MS = 1500
 WINDOW_WIDTH = 460
-EXPANDED_HEIGHT = 640
-COLLAPSED_HEIGHT = 330
+EXPANDED_HEIGHT = 680
+COLLAPSED_HEIGHT = 370
 SPI_GETWORKAREA = 0x0030
 
 
@@ -377,9 +378,10 @@ class MainWindow(tk.Tk):
 
     def _build_layout(self) -> None:
         self._build_titlebar()
+        self._build_output_selector()
 
         self.media_panel = MediaPanel(self, self.colors)
-        self.media_panel.frame.pack(fill="x", padx=20, pady=(14, 16))
+        self.media_panel.frame.pack(fill="x", padx=20, pady=(0, 16))
 
         self.section_toggle = tk.Label(
             self, font=(FONT, 9, "bold"), anchor="w", cursor="hand2"
@@ -473,6 +475,52 @@ class MainWindow(tk.Tk):
     def _on_titlebar_btn_leave(self, btn: tk.Button) -> None:
         btn.configure(bg=self.colors["bg"], fg=self.colors["fg_muted"])
 
+    def _build_output_selector(self) -> None:
+        """Selector de dispositivo de salida (parlantes/auriculares), como
+        el que tiene EarTrumpet arriba de todo."""
+        self._device_by_name: dict[str, str] = {}
+
+        self.output_row = tk.Frame(self, bd=0, highlightthickness=0)
+        self.output_row.pack(fill="x", padx=20, pady=(0, 14))
+
+        self.output_icon = tk.Label(self.output_row, text="🔊", font=(FONT, 11))
+        self.output_icon.pack(side="left")
+
+        self.output_var = tk.StringVar()
+        self.output_combo = ttk.Combobox(
+            self.output_row,
+            textvariable=self.output_var,
+            state="readonly",
+            font=(FONT, 9),
+        )
+        self.output_combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        self.output_combo.bind("<<ComboboxSelected>>", self._on_output_device_selected)
+
+        self._refresh_output_devices()
+
+    def _refresh_output_devices(self) -> None:
+        try:
+            devices = list_output_devices()
+        except Exception:
+            devices = []
+
+        self._device_by_name = {d.name: d.id for d in devices}
+        self.output_combo.configure(values=list(self._device_by_name.keys()))
+
+        current = next((d.name for d in devices if d.is_default), None)
+        # No pisar la selección mientras el desplegable está abierto.
+        if current and self.output_var.get() != current:
+            self.output_var.set(current)
+
+    def _on_output_device_selected(self, _event) -> None:
+        device_id = self._device_by_name.get(self.output_var.get())
+        if device_id:
+            try:
+                set_default_output_device(device_id)
+            except Exception:
+                pass
+        self.output_combo.selection_clear()
+
     def _start_move(self, event) -> None:
         if self._maximized:
             return
@@ -564,6 +612,8 @@ class MainWindow(tk.Tk):
         for btn in (self.theme_btn, self.minimize_btn, self.maximize_btn, self.close_btn):
             btn.configure(bg=colors["bg"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
         self.section_toggle.configure(bg=colors["bg"], fg=colors["fg_muted"])
+        self.output_row.configure(bg=colors["bg"])
+        self.output_icon.configure(bg=colors["bg"], fg=colors["fg_muted"])
         self.list_container.configure(bg=colors["bg"])
         self.canvas.configure(bg=colors["bg"])
         self.rows_frame.configure(bg=colors["bg"])
@@ -585,6 +635,28 @@ class MainWindow(tk.Tk):
             arrowcolor=colors["fg_muted"],
             relief="flat",
         )
+        self.style.configure(
+            "TCombobox",
+            fieldbackground=colors["surface"],
+            background=colors["surface"],
+            foreground=colors["fg"],
+            arrowcolor=colors["fg_muted"],
+            bordercolor=colors["border"],
+            lightcolor=colors["surface"],
+            darkcolor=colors["surface"],
+        )
+        self.style.map(
+            "TCombobox",
+            fieldbackground=[("readonly", colors["surface"])],
+            foreground=[("readonly", colors["fg"])],
+        )
+        # El desplegable del Combobox es un Listbox de Tk puro: se tematiza
+        # aparte, vía la option database.
+        self.option_add("*TCombobox*Listbox.background", colors["surface"])
+        self.option_add("*TCombobox*Listbox.foreground", colors["fg"])
+        self.option_add("*TCombobox*Listbox.selectBackground", colors["accent"])
+        self.option_add("*TCombobox*Listbox.selectForeground", colors["accent_fg"])
+        self.option_add("*TCombobox*Listbox.font", (FONT, 9))
 
         self.media_panel.apply_theme(colors)
         self.flyout.apply_theme(colors)
@@ -593,6 +665,7 @@ class MainWindow(tk.Tk):
 
     def _refresh_loop(self) -> None:
         self._refresh_sessions()
+        self._refresh_output_devices()
         self.media_panel.refresh()
         if self.flyout.state() != "withdrawn":
             self.flyout.refresh()

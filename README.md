@@ -10,6 +10,10 @@ anterior) de lo que esté sonando, todo desde una sola ventana.
   el navegador, un juego, Discord, etc.) y permite subir, bajar o silenciar
   cada una de forma independiente al volumen general de Windows. Usa las
   APIs de Windows Core Audio a través de [`pycaw`](https://github.com/AndreMiras/pycaw).
+- **Cambiar la salida de audio**: un desplegable arriba de todo, igual que
+  en [EarTrumpet](https://github.com/File-New-Project/EarTrumpet), para
+  elegir a qué parlantes o auriculares sale el sonido sin tener que abrir
+  la configuración de Windows.
 - **Controles multimedia**: muestra el título y artista de lo que se está
   reproduciendo y permite reproducir/pausar, pasar a la siguiente canción o
   volver a la anterior. Funciona con cualquier app compatible con los
@@ -71,6 +75,7 @@ tiene que viajar completa (el `.exe` no funciona separado de `_internal/`).
 ```
 main.py                  Punto de entrada
 app/audio_sessions.py    Volumen por aplicación (pycaw / Core Audio)
+app/audio_devices.py     Elegir el dispositivo de salida (pycaw / IPolicyConfig)
 app/media_control.py     Play/pause/siguiente/anterior (WinRT SMTC)
 app/gui.py               Interfaz gráfica (Tkinter)
 app/theme.py             Colores claro/oscuro y preferencias guardadas
