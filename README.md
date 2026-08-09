@@ -19,9 +19,11 @@ anterior) de lo que esté sonando, todo desde una sola ventana.
   sistema (todas las apps a la vez), disponible tanto en la ventana
   completa como en el panelito de la bandeja.
 - **Controles multimedia**: muestra el título y artista de lo que se está
-  reproduciendo y permite reproducir/pausar, pasar a la siguiente canción o
-  volver a la anterior. Funciona con cualquier app compatible con los
-  controles multimedia de Windows (System Media Transport Controls), sin
+  reproduciendo, con la portada o miniatura real de fondo (la carátula en
+  Spotify/YouTube Music, la miniatura del video en YouTube, etc.), y
+  permite reproducir/pausar, pasar a la siguiente canción o volver a la
+  anterior. Funciona con cualquier app compatible con los controles
+  multimedia de Windows (System Media Transport Controls), sin
   integración específica por app.
 - **Bandeja del sistema**: al cerrar la ventana (✕) el programa no se
   cierra, se minimiza al área de notificación (al lado del reloj) y sigue

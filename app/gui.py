@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import ctypes
 import ctypes.wintypes
+import io
 import tkinter as tk
 from tkinter import ttk
 
-from PIL import ImageTk
+from PIL import Image, ImageTk
 
 from .audio_devices import (
     get_master_volume,
@@ -53,6 +54,48 @@ def _do_play_pause() -> None:
 
 def _do_next() -> None:
     run_async(next_track())
+
+
+_ART_SCRIM_TOP = 110  # oscurecido arriba de la portada (0-255)
+_ART_SCRIM_BOTTOM = 235  # oscurecido abajo, donde va el texto/controles
+_ART_SCRIM_COLOR = (8, 8, 12)
+
+
+def _cover_fit(image: Image.Image, width: int, height: int) -> Image.Image:
+    """Recorta y escala una imagen para llenar width×height sin deformarla
+    (mismo criterio que `background-size: cover` en CSS)."""
+    src_ratio = image.width / image.height
+    dst_ratio = width / height
+    if src_ratio > dst_ratio:
+        new_height = height
+        new_width = max(1, round(height * src_ratio))
+    else:
+        new_width = width
+        new_height = max(1, round(width / src_ratio))
+    resized = image.resize((new_width, new_height), Image.LANCZOS)
+    left = (new_width - width) // 2
+    top = (new_height - height) // 2
+    return resized.crop((left, top, left + width, top + height))
+
+
+def _compose_art_background(thumbnail: Image.Image | None, width: int, height: int, fallback: str) -> Image.Image:
+    """Fondo del panel de reproducción: la portada/miniatura recortada con un
+    degradado oscuro (más fuerte abajo, donde va el texto) para que se siga
+    leyendo; o un color plano si no hay portada disponible."""
+    width, height = max(width, 1), max(height, 1)
+    if thumbnail is None:
+        return Image.new("RGB", (width, height), fallback)
+
+    cropped = _cover_fit(thumbnail, width, height)
+
+    gradient = Image.new("L", (1, height))
+    for y in range(height):
+        t = y / max(height - 1, 1)
+        gradient.putpixel((0, y), round(_ART_SCRIM_TOP + t * (_ART_SCRIM_BOTTOM - _ART_SCRIM_TOP)))
+    gradient = gradient.resize((width, height))
+
+    scrim = Image.new("RGB", (width, height), _ART_SCRIM_COLOR)
+    return Image.composite(scrim, cropped, gradient)
 
 
 class VolumeSlider(tk.Canvas):
@@ -306,35 +349,36 @@ class AppRow:
 
 
 class MediaPanel:
-    """Tarjeta superior: qué está sonando + play/pause/siguiente/anterior."""
+    """Tarjeta superior: la portada/miniatura de fondo + qué está sonando +
+    play/pause/siguiente/anterior — como el "now playing" de Spotify."""
+
+    HEIGHT = 150
 
     def __init__(self, parent: tk.Widget, colors: dict):
         self.colors = colors
-        self.frame = tk.Frame(parent, bd=0, highlightthickness=1)
-        self.frame.columnconfigure(1, weight=1)
+        self._thumbnail_raw: bytes | None = None
+        self._thumbnail: Image.Image | None = None
+        self._bg_photo = None
+        self._bg_id = None
 
-        self.art = tk.Canvas(self.frame, width=56, height=56, highlightthickness=0, bd=0)
-        self.art.grid(row=0, column=0, rowspan=2, padx=16, pady=16)
+        self.frame = tk.Canvas(parent, height=self.HEIGHT, highlightthickness=1, bd=0)
+        self.frame.bind("<Configure>", lambda e: self._redraw())
 
-        self.title_label = tk.Label(self.frame, text="Nada sonando", anchor="w", font=(FONT, 13, "bold"))
-        self.title_label.grid(row=0, column=1, sticky="ew", pady=(16, 0), padx=(0, 16))
-
-        self.artist_label = tk.Label(
-            self.frame, text="Reproducí algo para verlo acá", anchor="w", font=(FONT, 10)
+        self._title_id = self.frame.create_text(
+            18, self.HEIGHT - 78, anchor="w", text="Nada sonando", font=(FONT, 13, "bold")
         )
-        self.artist_label.grid(row=1, column=1, sticky="ew", padx=(0, 16))
+        self._artist_id = self.frame.create_text(
+            18, self.HEIGHT - 54, anchor="w", text="Reproducí algo para verlo acá", font=(FONT, 10)
+        )
 
         self.controls = tk.Frame(self.frame, bd=0, highlightthickness=0)
-        self.controls.grid(row=2, column=0, columnspan=2, pady=(4, 18))
-
         self.prev_btn = self._make_button(self.controls, "⏮", _do_previous, size=13)
         self.prev_btn.grid(row=0, column=0, padx=6)
-
         self.play_btn = self._make_button(self.controls, "⏯", _do_play_pause, size=16, bold=True)
         self.play_btn.grid(row=0, column=1, padx=10)
-
         self.next_btn = self._make_button(self.controls, "⏭", _do_next, size=13)
         self.next_btn.grid(row=0, column=2, padx=6)
+        self._controls_id = self.frame.create_window(0, self.HEIGHT - 18, anchor="s", window=self.controls)
 
         self.apply_theme(colors)
 
@@ -357,26 +401,62 @@ class MediaPanel:
         now_playing = _fetch_now_playing()
 
         if now_playing is None:
-            self.title_label.configure(text="Nada sonando")
-            self.artist_label.configure(text="Reproducí algo para verlo acá")
+            self.frame.itemconfig(self._title_id, text="Nada sonando")
+            self.frame.itemconfig(self._artist_id, text="Reproducí algo para verlo acá")
+            self._set_thumbnail(None)
             return
 
-        self.title_label.configure(text=now_playing.title)
-        self.artist_label.configure(text=now_playing.artist or "—")
+        self.frame.itemconfig(self._title_id, text=now_playing.title)
+        self.frame.itemconfig(self._artist_id, text=now_playing.artist or "—")
+        self._set_thumbnail(now_playing.thumbnail)
+
+    def _set_thumbnail(self, raw: bytes | None) -> None:
+        if raw == self._thumbnail_raw:
+            return  # misma portada que ya teníamos: no recomponer de nuevo
+        self._thumbnail_raw = raw
+        image = None
+        if raw:
+            try:
+                image = Image.open(io.BytesIO(raw)).convert("RGB")
+            except Exception:
+                image = None
+        self._thumbnail = image
+        self._redraw()
+
+    def _redraw(self) -> None:
+        width = self.frame.winfo_width()
+        if width <= 1:
+            return
+        composed = _compose_art_background(self._thumbnail, width, self.HEIGHT, self.colors["surface"])
+        self._bg_photo = ImageTk.PhotoImage(composed)
+        if self._bg_id is None:
+            self._bg_id = self.frame.create_image(0, 0, anchor="nw", image=self._bg_photo)
+            self.frame.tag_lower(self._bg_id)
+        else:
+            self.frame.itemconfig(self._bg_id, image=self._bg_photo)
+        self.frame.coords(self._controls_id, width / 2, self.HEIGHT - 18)
+        self._update_text_style()
+
+    def _update_text_style(self) -> None:
+        colors = self.colors
+        has_art = self._thumbnail is not None
+        title_fg = "#ffffff" if has_art else colors["fg"]
+        artist_fg = "#e2e2e8" if has_art else colors["fg_muted"]
+        btn_bg = "#0a0a0e" if has_art else colors["surface"]
+        btn_fg = "#e2e2e8" if has_art else colors["fg_muted"]
+        hover_bg = "#1c1c22" if has_art else colors["surface_alt"]
+
+        self.frame.itemconfig(self._title_id, fill=title_fg)
+        self.frame.itemconfig(self._artist_id, fill=artist_fg)
+        self.controls.configure(bg=btn_bg)
+        for btn in (self.prev_btn, self.next_btn):
+            btn.configure(bg=btn_bg, fg=btn_fg, activebackground=hover_bg)
+        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
 
     def apply_theme(self, colors: dict) -> None:
         self.colors = colors
         self.frame.configure(bg=colors["surface"], highlightbackground=colors["border"])
-        self.art.configure(bg=colors["surface"])
-        self.art.delete("all")
-        self.art.create_rectangle(2, 2, 54, 54, fill=colors["surface_alt"], outline="")
-        self.art.create_text(28, 28, text="♪", fill=colors["accent"], font=(FONT, 20, "bold"))
-        self.title_label.configure(bg=colors["surface"], fg=colors["fg"])
-        self.artist_label.configure(bg=colors["surface"], fg=colors["fg_muted"])
-        self.controls.configure(bg=colors["surface"])
-        for btn in (self.prev_btn, self.next_btn):
-            btn.configure(bg=colors["surface"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
-        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+        self._redraw()
 
 
 class Flyout(tk.Toplevel):
@@ -385,6 +465,7 @@ class Flyout(tk.Toplevel):
     sin abrir la ventana completa."""
 
     WIDTH = 280
+    ART_HEIGHT = 130
     MARGIN = 10
 
     def __init__(self, master: "MainWindow"):
@@ -394,54 +475,106 @@ class Flyout(tk.Toplevel):
         self.attributes("-topmost", True)
         self.withdraw()
 
+        self._thumbnail_raw: bytes | None = None
+        self._thumbnail: Image.Image | None = None
+        self._bg_photo = None
+        self._bg_id = None
+        self.colors: dict = {}
+
         self.card = tk.Frame(self, bd=0, highlightthickness=1)
         self.card.pack(fill="both", expand=True)
 
-        self.title_label = tk.Label(
-            self.card, text="Nada sonando", font=(FONT, 11, "bold"), wraplength=240, justify="center"
+        self.art_canvas = tk.Canvas(self.card, height=self.ART_HEIGHT, highlightthickness=0, bd=0)
+        self.art_canvas.pack(fill="x")
+        self.art_canvas.bind("<Configure>", lambda e: self._redraw())
+
+        self._title_id = self.art_canvas.create_text(
+            16, self.ART_HEIGHT - 58, anchor="w", text="Nada sonando", font=(FONT, 11, "bold")
         )
-        self.title_label.pack(padx=16, pady=(16, 0))
+        self._artist_id = self.art_canvas.create_text(
+            16, self.ART_HEIGHT - 40, anchor="w", text="", font=(FONT, 9)
+        )
 
-        self.artist_label = tk.Label(self.card, font=(FONT, 9), wraplength=240, justify="center")
-        self.artist_label.pack(padx=16)
-
-        self.controls = tk.Frame(self.card, bd=0, highlightthickness=0)
-        self.controls.pack(pady=(12, 16))
-
+        self.controls = tk.Frame(self.art_canvas, bd=0, highlightthickness=0)
         self.prev_btn = MediaPanel._make_button(self.controls, "⏮", _do_previous, size=13)
         self.prev_btn.grid(row=0, column=0, padx=6)
-
         self.play_btn = MediaPanel._make_button(self.controls, "⏯", _do_play_pause, size=16, bold=True)
         self.play_btn.grid(row=0, column=1, padx=10)
-
         self.next_btn = MediaPanel._make_button(self.controls, "⏭", _do_next, size=13)
         self.next_btn.grid(row=0, column=2, padx=6)
+        self._controls_id = self.art_canvas.create_window(
+            0, self.ART_HEIGHT - 14, anchor="s", window=self.controls
+        )
 
         self.master_volume = MasterVolumeControl(self.card)
-        self.master_volume.frame.pack(fill="x", padx=16, pady=(0, 16))
+        self.master_volume.frame.pack(fill="x", padx=16, pady=(10, 16))
 
         self.bind("<FocusOut>", lambda e: self.hide())
 
     def refresh(self) -> None:
         now_playing = _fetch_now_playing()
         if now_playing is None:
-            self.title_label.configure(text="Nada sonando")
-            self.artist_label.configure(text="")
+            self.art_canvas.itemconfig(self._title_id, text="Nada sonando")
+            self.art_canvas.itemconfig(self._artist_id, text="")
+            self._set_thumbnail(None)
         else:
-            self.title_label.configure(text=now_playing.title)
-            self.artist_label.configure(text=now_playing.artist or "—")
+            self.art_canvas.itemconfig(self._title_id, text=now_playing.title)
+            self.art_canvas.itemconfig(self._artist_id, text=now_playing.artist or "—")
+            self._set_thumbnail(now_playing.thumbnail)
         self.master_volume.refresh()
 
+    def _set_thumbnail(self, raw: bytes | None) -> None:
+        if raw == self._thumbnail_raw:
+            return
+        self._thumbnail_raw = raw
+        image = None
+        if raw:
+            try:
+                image = Image.open(io.BytesIO(raw)).convert("RGB")
+            except Exception:
+                image = None
+        self._thumbnail = image
+        self._redraw()
+
+    def _redraw(self) -> None:
+        if not self.colors:
+            return
+        width = self.art_canvas.winfo_width()
+        if width <= 1:
+            return
+        composed = _compose_art_background(self._thumbnail, width, self.ART_HEIGHT, self.colors["surface"])
+        self._bg_photo = ImageTk.PhotoImage(composed)
+        if self._bg_id is None:
+            self._bg_id = self.art_canvas.create_image(0, 0, anchor="nw", image=self._bg_photo)
+            self.art_canvas.tag_lower(self._bg_id)
+        else:
+            self.art_canvas.itemconfig(self._bg_id, image=self._bg_photo)
+        self.art_canvas.coords(self._controls_id, width / 2, self.ART_HEIGHT - 14)
+        self._update_text_style()
+
+    def _update_text_style(self) -> None:
+        colors = self.colors
+        has_art = self._thumbnail is not None
+        title_fg = "#ffffff" if has_art else colors["fg"]
+        artist_fg = "#e2e2e8" if has_art else colors["fg_muted"]
+        btn_bg = "#0a0a0e" if has_art else colors["surface"]
+        btn_fg = "#e2e2e8" if has_art else colors["fg_muted"]
+        hover_bg = "#1c1c22" if has_art else colors["surface_alt"]
+
+        self.art_canvas.itemconfig(self._title_id, fill=title_fg)
+        self.art_canvas.itemconfig(self._artist_id, fill=artist_fg)
+        self.controls.configure(bg=btn_bg)
+        for btn in (self.prev_btn, self.next_btn):
+            btn.configure(bg=btn_bg, fg=btn_fg, activebackground=hover_bg)
+        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+
     def apply_theme(self, colors: dict) -> None:
+        self.colors = colors
         self.configure(bg=colors["bg"])
         self.card.configure(bg=colors["surface"], highlightbackground=colors["border"])
-        self.title_label.configure(bg=colors["surface"], fg=colors["fg"])
-        self.artist_label.configure(bg=colors["surface"], fg=colors["fg_muted"])
-        self.controls.configure(bg=colors["surface"])
-        for btn in (self.prev_btn, self.next_btn):
-            btn.configure(bg=colors["surface"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
-        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+        self.art_canvas.configure(bg=colors["surface"])
         self.master_volume.apply_theme(colors, colors["surface"])
+        self._redraw()
 
     def _position(self) -> None:
         self.update_idletasks()
