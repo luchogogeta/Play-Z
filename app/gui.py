@@ -1,4 +1,9 @@
-"""Interfaz gráfica (Tkinter): mezclador por app + controles multimedia."""
+"""Interfaz gráfica (Tkinter): mezclador por app + controles multimedia.
+
+Diseño tipo tarjetas, con tema claro/oscuro intercambiable (se recuerda
+entre sesiones) y un poco de identidad visual (avatares por app, acento
+de color, tipografía consistente).
+"""
 
 from __future__ import annotations
 
@@ -6,88 +11,166 @@ import tkinter as tk
 from tkinter import ttk
 
 from .audio_sessions import AppAudioSession, list_app_sessions
-from .media_control import next_track, play_pause, previous_track, run as run_async
-from .media_control import get_now_playing
+from .media_control import get_now_playing, next_track, play_pause, previous_track
+from .media_control import run as run_async
+from .theme import FONT, THEMES, avatar_color, load_settings, save_settings
 
 REFRESH_MS = 1500
+WINDOW_WIDTH = 460
+EXPANDED_HEIGHT = 640
+COLLAPSED_HEIGHT = 330
 
 
-class SessionRow:
-    """Una fila de la lista: nombre de app + slider de volumen + mute."""
+class AppRow:
+    """Tarjeta de una app: avatar, nombre, % de volumen, slider y mute."""
 
-    def __init__(self, parent: tk.Widget, session: AppAudioSession):
+    def __init__(self, parent: tk.Widget, session: AppAudioSession, colors: dict):
         self.pid = session.pid
         self._dragging = False
+        self._session = session
+        self.colors = colors
 
-        self.frame = ttk.Frame(parent, padding=(8, 4))
-        self.frame.columnconfigure(1, weight=1)
+        self.card = tk.Frame(parent, bd=0, highlightthickness=1)
+        self.card.pack(fill="x", pady=(0, 10))
+        self.card.columnconfigure(1, weight=1)
 
-        self.name_label = ttk.Label(self.frame, text=session.name, width=24)
-        self.name_label.grid(row=0, column=0, sticky="w")
+        self.avatar = tk.Canvas(self.card, width=36, height=36, highlightthickness=0, bd=0)
+        self.avatar.grid(row=0, column=0, rowspan=2, padx=(14, 12), pady=14)
+
+        self.name_label = tk.Label(
+            self.card, text=session.name, anchor="w", font=(FONT, 10, "bold")
+        )
+        self.name_label.grid(row=0, column=1, sticky="ew", pady=(12, 0))
+
+        self.percent_label = tk.Label(self.card, text="", anchor="e", font=(FONT, 9))
+        self.percent_label.grid(row=0, column=2, sticky="e", padx=(4, 14), pady=(12, 0))
+
+        self.mute_btn = tk.Button(
+            self.card,
+            bd=0,
+            highlightthickness=0,
+            takefocus=0,
+            cursor="hand2",
+            font=(FONT, 11),
+            command=self._on_mute_toggle,
+        )
+        self.mute_btn.grid(row=0, column=3, rowspan=2, padx=(0, 14))
 
         self.volume_var = tk.DoubleVar(value=session.volume * 100)
         self.scale = ttk.Scale(
-            self.frame,
+            self.card,
             from_=0,
             to=100,
             orient="horizontal",
             variable=self.volume_var,
             command=self._on_scale_move,
+            style="Vol.Horizontal.TScale",
         )
-        self.scale.grid(row=0, column=1, sticky="ew", padx=8)
+        self.scale.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 8), pady=(2, 14))
         self.scale.bind("<ButtonPress-1>", lambda e: setattr(self, "_dragging", True))
         self.scale.bind("<ButtonRelease-1>", self._on_scale_release)
 
-        self.mute_var = tk.BooleanVar(value=session.muted)
-        self.mute_check = ttk.Checkbutton(
-            self.frame, text="Mute", variable=self.mute_var, command=self._on_mute_toggle
-        )
-        self.mute_check.grid(row=0, column=2, padx=4)
+        self._draw_avatar()
+        self._set_percent_label(session.volume)
+        self.apply_theme(colors)
 
-        self._session = session
+    def _draw_avatar(self) -> None:
+        self.avatar.delete("all")
+        self.avatar.create_oval(2, 2, 34, 34, fill=avatar_color(self._session.name), outline="")
+        letter = (self._session.name[:1] or "?").upper()
+        self.avatar.create_text(18, 18, text=letter, fill="#ffffff", font=(FONT, 12, "bold"))
 
-    def _on_scale_move(self, _value: str) -> None:
+    def _set_percent_label(self, volume: float) -> None:
+        self.percent_label.configure(text=f"{round(volume * 100)}%")
+
+    def _on_scale_move(self, value: str) -> None:
+        volume = float(value) / 100
+        self._set_percent_label(volume)
         if self._dragging:
-            self._session.set_volume(self.volume_var.get() / 100)
+            self._session.set_volume(volume)
 
     def _on_scale_release(self, _event) -> None:
         self._dragging = False
         self._session.set_volume(self.volume_var.get() / 100)
 
     def _on_mute_toggle(self) -> None:
-        self._session.set_muted(self.mute_var.get())
+        muted = not self._session.muted
+        self._session.set_muted(muted)
+        self._update_mute_button(muted)
+
+    def _update_mute_button(self, muted: bool) -> None:
+        self.mute_btn.configure(
+            text="🔇" if muted else "🔊",
+            fg=self.colors["danger"] if muted else self.colors["fg_muted"],
+        )
 
     def update_from(self, session: AppAudioSession) -> None:
         self._session = session
         if not self._dragging:
             self.volume_var.set(session.volume * 100)
-        self.mute_var.set(session.muted)
+            self._set_percent_label(session.volume)
+        self._update_mute_button(session.muted)
+
+    def apply_theme(self, colors: dict) -> None:
+        self.colors = colors
+        self.card.configure(bg=colors["surface"], highlightbackground=colors["border"])
+        self.avatar.configure(bg=colors["surface"])
+        self.name_label.configure(bg=colors["surface"], fg=colors["fg"])
+        self.percent_label.configure(bg=colors["surface"], fg=colors["fg_muted"])
+        self.mute_btn.configure(bg=colors["surface"], activebackground=colors["surface_alt"])
+        self._update_mute_button(self._session.muted)
 
     def destroy(self) -> None:
-        self.frame.destroy()
+        self.card.destroy()
 
 
 class MediaPanel:
-    """Título/artista de lo que suena + botones de reproducción."""
+    """Tarjeta superior: qué está sonando + play/pause/siguiente/anterior."""
 
-    def __init__(self, parent: tk.Widget):
-        self.frame = ttk.Frame(parent, padding=10)
-        self.frame.columnconfigure(0, weight=1)
+    def __init__(self, parent: tk.Widget, colors: dict):
+        self.colors = colors
+        self.frame = tk.Frame(parent, bd=0, highlightthickness=1)
+        self.frame.columnconfigure(1, weight=1)
 
-        self.title_label = ttk.Label(
-            self.frame, text="Nada sonando", font=("Segoe UI", 12, "bold")
+        self.art = tk.Canvas(self.frame, width=56, height=56, highlightthickness=0, bd=0)
+        self.art.grid(row=0, column=0, rowspan=2, padx=16, pady=16)
+
+        self.title_label = tk.Label(self.frame, text="Nada sonando", anchor="w", font=(FONT, 13, "bold"))
+        self.title_label.grid(row=0, column=1, sticky="ew", pady=(16, 0), padx=(0, 16))
+
+        self.artist_label = tk.Label(
+            self.frame, text="Reproducí algo para verlo acá", anchor="w", font=(FONT, 10)
         )
-        self.title_label.grid(row=0, column=0, sticky="w")
+        self.artist_label.grid(row=1, column=1, sticky="ew", padx=(0, 16))
 
-        self.artist_label = ttk.Label(self.frame, text="")
-        self.artist_label.grid(row=1, column=0, sticky="w")
+        self.controls = tk.Frame(self.frame, bd=0, highlightthickness=0)
+        self.controls.grid(row=2, column=0, columnspan=2, pady=(4, 18))
 
-        buttons = ttk.Frame(self.frame)
-        buttons.grid(row=2, column=0, pady=(8, 0))
+        self.prev_btn = self._make_button(self.controls, "⏮", self._previous, size=13)
+        self.prev_btn.grid(row=0, column=0, padx=6)
 
-        ttk.Button(buttons, text="⏮", width=4, command=self._previous).grid(row=0, column=0)
-        ttk.Button(buttons, text="⏯", width=4, command=self._play_pause).grid(row=0, column=1)
-        ttk.Button(buttons, text="⏭", width=4, command=self._next).grid(row=0, column=2)
+        self.play_btn = self._make_button(self.controls, "⏯", self._play_pause, size=16, bold=True)
+        self.play_btn.grid(row=0, column=1, padx=10)
+
+        self.next_btn = self._make_button(self.controls, "⏭", self._next, size=13)
+        self.next_btn.grid(row=0, column=2, padx=6)
+
+        self.apply_theme(colors)
+
+    @staticmethod
+    def _make_button(parent, text, command, *, size, bold=False):
+        weight = "bold" if bold else "normal"
+        return tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bd=0,
+            highlightthickness=0,
+            takefocus=0,
+            cursor="hand2",
+            width=3,
+            font=(FONT, size, weight),
+        )
 
     def _previous(self) -> None:
         run_async(previous_track())
@@ -105,47 +188,186 @@ class MediaPanel:
             now_playing = None
 
         if now_playing is None:
-            self.title_label.config(text="Nada sonando")
-            self.artist_label.config(text="")
+            self.title_label.configure(text="Nada sonando")
+            self.artist_label.configure(text="Reproducí algo para verlo acá")
             return
 
-        self.title_label.config(text=now_playing.title)
-        self.artist_label.config(text=now_playing.artist)
+        self.title_label.configure(text=now_playing.title)
+        self.artist_label.configure(text=now_playing.artist or "—")
+
+    def apply_theme(self, colors: dict) -> None:
+        self.colors = colors
+        self.frame.configure(bg=colors["surface"], highlightbackground=colors["border"])
+        self.art.configure(bg=colors["surface"])
+        self.art.delete("all")
+        self.art.create_rectangle(2, 2, 54, 54, fill=colors["surface_alt"], outline="")
+        self.art.create_text(28, 28, text="♪", fill=colors["accent"], font=(FONT, 20, "bold"))
+        self.title_label.configure(bg=colors["surface"], fg=colors["fg"])
+        self.artist_label.configure(bg=colors["surface"], fg=colors["fg_muted"])
+        self.controls.configure(bg=colors["surface"])
+        for btn in (self.prev_btn, self.next_btn):
+            btn.configure(bg=colors["surface"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
+        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
 
 
 class MainWindow(tk.Tk):
     def __init__(self):
         super().__init__()
+        settings = load_settings()
+        self.theme_name = settings["theme"]
+        self.colors = THEMES[self.theme_name]
+        self.list_expanded = settings["list_expanded"]
+        self.rows: dict[int, AppRow] = {}
+
         self.title("Reproductor")
-        self.geometry("420x480")
-        self.minsize(360, 320)
+        self.resizable(True, True)
+        self.minsize(360, 260)
 
-        self.media_panel = MediaPanel(self)
-        self.media_panel.frame.pack(fill="x")
+        self.style = ttk.Style(self)
+        self.style.theme_use("clam")
 
-        ttk.Separator(self).pack(fill="x")
+        self._build_layout()
+        self._apply_theme()
+        self._apply_list_visibility()
+        self._center_window()
+        self._refresh_loop()
 
-        ttk.Label(self, text="Aplicaciones con audio", padding=(8, 6)).pack(anchor="w")
+    def _build_layout(self) -> None:
+        self.header = tk.Frame(self, bd=0, highlightthickness=0)
+        self.header.pack(fill="x", padx=20, pady=(18, 10))
 
-        list_container = ttk.Frame(self)
-        list_container.pack(fill="both", expand=True)
+        self.title_label = tk.Label(self.header, text="Reproductor", font=(FONT, 16, "bold"))
+        self.title_label.pack(side="left")
 
-        canvas = tk.Canvas(list_container, highlightthickness=0)
-        scrollbar = ttk.Scrollbar(list_container, orient="vertical", command=canvas.yview)
-        self.rows_frame = ttk.Frame(canvas)
+        self.theme_btn = tk.Button(
+            self.header,
+            bd=0,
+            highlightthickness=0,
+            takefocus=0,
+            cursor="hand2",
+            font=(FONT, 12),
+            command=self._toggle_theme,
+        )
+        self.theme_btn.pack(side="right")
+
+        self.media_panel = MediaPanel(self, self.colors)
+        self.media_panel.frame.pack(fill="x", padx=20, pady=(0, 16))
+
+        self.section_toggle = tk.Label(
+            self, font=(FONT, 9, "bold"), anchor="w", cursor="hand2"
+        )
+        self.section_toggle.pack(fill="x", padx=22, pady=(0, 8))
+        self.section_toggle.bind("<Button-1>", lambda e: self._toggle_list())
+
+        self.list_container = tk.Frame(self, bd=0, highlightthickness=0)
+
+        self.canvas = tk.Canvas(self.list_container, highlightthickness=0, bd=0)
+        self.scrollbar = ttk.Scrollbar(
+            self.list_container,
+            orient="vertical",
+            command=self.canvas.yview,
+            style="Nice.Vertical.TScrollbar",
+        )
+        self.rows_frame = tk.Frame(self.canvas, bd=0, highlightthickness=0)
 
         self.rows_frame.bind(
-            "<Configure>", lambda e: canvas.configure(scrollregion=canvas.bbox("all"))
+            "<Configure>", lambda e: self.canvas.configure(scrollregion=self.canvas.bbox("all"))
         )
-        canvas.create_window((0, 0), window=self.rows_frame, anchor="nw")
-        canvas.configure(yscrollcommand=scrollbar.set)
+        self.canvas_window = self.canvas.create_window((0, 0), window=self.rows_frame, anchor="nw")
+        self.canvas.bind(
+            "<Configure>", lambda e: self.canvas.itemconfig(self.canvas_window, width=e.width)
+        )
+        self.canvas.configure(yscrollcommand=self.scrollbar.set)
+        self.canvas.bind("<Enter>", lambda e: self.canvas.bind_all("<MouseWheel>", self._on_mousewheel))
+        self.canvas.bind("<Leave>", lambda e: self.canvas.unbind_all("<MouseWheel>"))
 
-        canvas.pack(side="left", fill="both", expand=True)
-        scrollbar.pack(side="right", fill="y")
+        self.canvas.pack(side="left", fill="both", expand=True)
+        self.scrollbar.pack(side="right", fill="y")
 
-        self.rows: dict[int, SessionRow] = {}
+        self.empty_label = tk.Label(
+            self.rows_frame,
+            text="No se detectó audio activo todavía…",
+            font=(FONT, 10),
+            wraplength=320,
+            justify="center",
+        )
 
-        self._refresh_loop()
+    def _on_mousewheel(self, event) -> None:
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    def _current_height(self) -> int:
+        return EXPANDED_HEIGHT if self.list_expanded else COLLAPSED_HEIGHT
+
+    def _center_window(self) -> None:
+        self.update_idletasks()
+        width, height = WINDOW_WIDTH, self._current_height()
+        x = (self.winfo_screenwidth() - width) // 2
+        y = (self.winfo_screenheight() - height) // 2
+        self.geometry(f"{width}x{height}+{x}+{y}")
+
+    def _apply_list_visibility(self) -> None:
+        if self.list_expanded:
+            self.list_container.pack(fill="both", expand=True, padx=20, pady=(0, 18))
+        else:
+            self.list_container.pack_forget()
+        self.section_toggle.configure(
+            text=("▾  Aplicaciones con audio" if self.list_expanded else "▸  Aplicaciones con audio")
+        )
+
+    def _toggle_list(self) -> None:
+        self.list_expanded = not self.list_expanded
+        save_settings(list_expanded=self.list_expanded)
+        self._apply_list_visibility()
+
+        self.update_idletasks()
+        width = self.winfo_width()
+        x, y = self.winfo_x(), self.winfo_y()
+        self.geometry(f"{width}x{self._current_height()}+{x}+{y}")
+
+    def _toggle_theme(self) -> None:
+        self.theme_name = "light" if self.theme_name == "dark" else "dark"
+        self.colors = THEMES[self.theme_name]
+        save_settings(theme=self.theme_name)
+        self._apply_theme()
+
+    def _apply_theme(self) -> None:
+        colors = self.colors
+
+        self.configure(bg=colors["bg"])
+        self.header.configure(bg=colors["bg"])
+        self.title_label.configure(bg=colors["bg"], fg=colors["fg"])
+        self.theme_btn.configure(
+            text="☀️" if self.theme_name == "dark" else "🌙",
+            bg=colors["bg"],
+            fg=colors["fg_muted"],
+            activebackground=colors["bg"],
+        )
+        self.section_toggle.configure(bg=colors["bg"], fg=colors["fg_muted"])
+        self.list_container.configure(bg=colors["bg"])
+        self.canvas.configure(bg=colors["bg"])
+        self.rows_frame.configure(bg=colors["bg"])
+        self.empty_label.configure(bg=colors["bg"], fg=colors["fg_muted"])
+
+        self.style.configure(
+            "Vol.Horizontal.TScale",
+            troughcolor=colors["surface_alt"],
+            background=colors["surface"],
+            lightcolor=colors["accent"],
+            darkcolor=colors["accent"],
+            bordercolor=colors["surface"],
+        )
+        self.style.configure(
+            "Nice.Vertical.TScrollbar",
+            background=colors["border"],
+            troughcolor=colors["bg"],
+            bordercolor=colors["bg"],
+            arrowcolor=colors["fg_muted"],
+            relief="flat",
+        )
+
+        self.media_panel.apply_theme(colors)
+        for row in self.rows.values():
+            row.apply_theme(colors)
 
     def _refresh_loop(self) -> None:
         self._refresh_sessions()
@@ -163,8 +385,7 @@ class MainWindow(tk.Tk):
             seen_pids.add(session.pid)
             row = self.rows.get(session.pid)
             if row is None:
-                row = SessionRow(self.rows_frame, session)
-                row.frame.pack(fill="x")
+                row = AppRow(self.rows_frame, session, self.colors)
                 self.rows[session.pid] = row
             else:
                 row.update_from(session)
@@ -172,6 +393,11 @@ class MainWindow(tk.Tk):
         for pid in list(self.rows.keys()):
             if pid not in seen_pids:
                 self.rows.pop(pid).destroy()
+
+        if self.rows:
+            self.empty_label.pack_forget()
+        else:
+            self.empty_label.pack(pady=32)
 
 
 def main() -> None:
