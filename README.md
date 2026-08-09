@@ -48,9 +48,17 @@ pip install -r requirements-dev.txt
 pyinstaller Reproductor.spec
 ```
 
-El ejecutable queda en `dist/Reproductor.exe`. Es un único archivo: se
-puede copiar a cualquier lado (Escritorio, menú inicio, etc.) y abrirlo
-con doble clic, sin ventana de consola.
+Esto genera la carpeta `dist/Reproductor/`, con `Reproductor.exe` adentro
+junto a una carpeta `_internal/` con sus dependencias. Para abrir la app,
+doble clic en `Reproductor.exe` (sin ventana de consola) — o creá un
+acceso directo a ese `.exe` en el Escritorio o el menú inicio. Toda la
+carpeta `dist/Reproductor/` se puede mover junta a cualquier lado, pero
+tiene que viajar completa (el `.exe` no funciona separado de `_internal/`).
+
+> Se usa `--onedir` (carpeta) en vez de `--onefile` (un solo archivo) a
+> propósito: un `.exe` de un solo archivo se descomprime a una carpeta
+> temporal cada vez que se abre, lo que acá tardaba varios segundos. Con
+> `--onedir` los archivos ya están en disco y arranca casi al instante.
 
 ## Estructura
 

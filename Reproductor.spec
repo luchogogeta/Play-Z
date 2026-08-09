@@ -1,4 +1,9 @@
 # -*- mode: python ; coding: utf-8 -*-
+#
+# Empaquetado como carpeta (--onedir) en vez de un solo .exe (--onefile):
+# un .exe de un solo archivo tiene que descomprimirse a una carpeta temporal
+# CADA VEZ que se abre, lo que en esta app tardaba ~9 segundos. Con --onedir
+# los archivos ya están en disco, así que arranca casi al instante.
 from PyInstaller.utils.hooks import collect_all
 
 datas = []
@@ -21,7 +26,9 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=[],
+    # comtypes.test/ son ~26 módulos de test que no usa la app: solo pesan
+    # y suman tiempo de arranque de más.
+    excludes=['comtypes.test'],
     noarchive=False,
     optimize=0,
 )
@@ -30,20 +37,28 @@ pyz = PYZ(a.pure)
 exe = EXE(
     pyz,
     a.scripts,
-    a.binaries,
-    a.datas,
     [],
+    exclude_binaries=True,
     name='Reproductor',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
-    runtime_tmpdir=None,
     console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+)
+
+coll = COLLECT(
+    exe,
+    a.binaries,
+    a.datas,
+    strip=False,
+    upx=True,
+    upx_exclude=[],
+    name='Reproductor',
 )
