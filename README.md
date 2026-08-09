@@ -17,8 +17,10 @@ anterior) de lo que esté sonando, todo desde una sola ventana.
   integración específica por app.
 - **Bandeja del sistema**: al cerrar la ventana (✕) el programa no se
   cierra, se minimiza al área de notificación (al lado del reloj) y sigue
-  corriendo. Desde ese ícono se puede mostrar/ocultar la ventana, controlar
-  la reproducción (⏮ ⏯ ⏭) y salir de verdad.
+  corriendo. Un clic en el ícono abre un panelito de controles (título,
+  artista, ⏮ ⏯ ⏭) justo arriba de la barra de tareas, como el de volumen o
+  red de Windows — sin abrir la ventana completa. Clic derecho para el
+  resto de las opciones (abrir la ventana completa, controles, salir).
 
 ## Requisitos
 

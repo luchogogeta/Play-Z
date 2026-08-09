@@ -44,16 +44,20 @@ class TrayIcon:
     def __init__(
         self,
         *,
-        on_toggle_visibility: Callable[[], None],
+        on_toggle_flyout: Callable[[], None],
+        on_show_window: Callable[[], None],
         on_play_pause: Callable[[], None],
         on_next: Callable[[], None],
         on_previous: Callable[[], None],
         on_quit: Callable[[], None],
     ):
+        # Clic izquierdo (acción por defecto): abre el panelito de controles
+        # arriba de la bandeja, como el volumen o la red de Windows.
         menu = pystray.Menu(
             pystray.MenuItem(
-                "Mostrar / ocultar", lambda icon, item: on_toggle_visibility(), default=True
+                "Controles", lambda icon, item: on_toggle_flyout(), default=True, visible=False
             ),
+            pystray.MenuItem("Mostrar ventana completa", lambda icon, item: on_show_window()),
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("⏮  Anterior", lambda icon, item: on_previous()),
             pystray.MenuItem("⏯  Play / pausa", lambda icon, item: on_play_pause()),

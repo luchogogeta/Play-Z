@@ -27,6 +27,26 @@ COLLAPSED_HEIGHT = 330
 SPI_GETWORKAREA = 0x0030
 
 
+def _fetch_now_playing():
+    """Wrapper sincrónico y a prueba de excepciones sobre get_now_playing()."""
+    try:
+        return run_async(get_now_playing())
+    except Exception:
+        return None
+
+
+def _do_previous() -> None:
+    run_async(previous_track())
+
+
+def _do_play_pause() -> None:
+    run_async(play_pause())
+
+
+def _do_next() -> None:
+    run_async(next_track())
+
+
 class AppRow:
     """Tarjeta de una app: avatar, nombre, % de volumen, slider y mute."""
 
@@ -152,13 +172,13 @@ class MediaPanel:
         self.controls = tk.Frame(self.frame, bd=0, highlightthickness=0)
         self.controls.grid(row=2, column=0, columnspan=2, pady=(4, 18))
 
-        self.prev_btn = self._make_button(self.controls, "⏮", self._previous, size=13)
+        self.prev_btn = self._make_button(self.controls, "⏮", _do_previous, size=13)
         self.prev_btn.grid(row=0, column=0, padx=6)
 
-        self.play_btn = self._make_button(self.controls, "⏯", self._play_pause, size=16, bold=True)
+        self.play_btn = self._make_button(self.controls, "⏯", _do_play_pause, size=16, bold=True)
         self.play_btn.grid(row=0, column=1, padx=10)
 
-        self.next_btn = self._make_button(self.controls, "⏭", self._next, size=13)
+        self.next_btn = self._make_button(self.controls, "⏭", _do_next, size=13)
         self.next_btn.grid(row=0, column=2, padx=6)
 
         self.apply_theme(colors)
@@ -178,20 +198,8 @@ class MediaPanel:
             font=(FONT, size, weight),
         )
 
-    def _previous(self) -> None:
-        run_async(previous_track())
-
-    def _play_pause(self) -> None:
-        run_async(play_pause())
-
-    def _next(self) -> None:
-        run_async(next_track())
-
     def refresh(self) -> None:
-        try:
-            now_playing = run_async(get_now_playing())
-        except Exception:
-            now_playing = None
+        now_playing = _fetch_now_playing()
 
         if now_playing is None:
             self.title_label.configure(text="Nada sonando")
@@ -214,6 +222,91 @@ class MediaPanel:
         for btn in (self.prev_btn, self.next_btn):
             btn.configure(bg=colors["surface"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
         self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+
+
+class Flyout(tk.Toplevel):
+    """Panelito de controles que aparece justo arriba del ícono de la bandeja
+    del sistema, como el de volumen o red de Windows — solo los controles,
+    sin abrir la ventana completa."""
+
+    WIDTH = 280
+    MARGIN = 10
+
+    def __init__(self, master: "MainWindow"):
+        super().__init__(master)
+        self._master_window = master
+        self.overrideredirect(True)
+        self.attributes("-topmost", True)
+        self.withdraw()
+
+        self.card = tk.Frame(self, bd=0, highlightthickness=1)
+        self.card.pack(fill="both", expand=True)
+
+        self.title_label = tk.Label(
+            self.card, text="Nada sonando", font=(FONT, 11, "bold"), wraplength=240, justify="center"
+        )
+        self.title_label.pack(padx=16, pady=(16, 0))
+
+        self.artist_label = tk.Label(self.card, font=(FONT, 9), wraplength=240, justify="center")
+        self.artist_label.pack(padx=16)
+
+        self.controls = tk.Frame(self.card, bd=0, highlightthickness=0)
+        self.controls.pack(pady=(12, 16))
+
+        self.prev_btn = MediaPanel._make_button(self.controls, "⏮", _do_previous, size=13)
+        self.prev_btn.grid(row=0, column=0, padx=6)
+
+        self.play_btn = MediaPanel._make_button(self.controls, "⏯", _do_play_pause, size=16, bold=True)
+        self.play_btn.grid(row=0, column=1, padx=10)
+
+        self.next_btn = MediaPanel._make_button(self.controls, "⏭", _do_next, size=13)
+        self.next_btn.grid(row=0, column=2, padx=6)
+
+        self.bind("<FocusOut>", lambda e: self.hide())
+
+    def refresh(self) -> None:
+        now_playing = _fetch_now_playing()
+        if now_playing is None:
+            self.title_label.configure(text="Nada sonando")
+            self.artist_label.configure(text="")
+        else:
+            self.title_label.configure(text=now_playing.title)
+            self.artist_label.configure(text=now_playing.artist or "—")
+
+    def apply_theme(self, colors: dict) -> None:
+        self.configure(bg=colors["bg"])
+        self.card.configure(bg=colors["surface"], highlightbackground=colors["border"])
+        self.title_label.configure(bg=colors["surface"], fg=colors["fg"])
+        self.artist_label.configure(bg=colors["surface"], fg=colors["fg_muted"])
+        self.controls.configure(bg=colors["surface"])
+        for btn in (self.prev_btn, self.next_btn):
+            btn.configure(bg=colors["surface"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
+        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+
+    def _position(self) -> None:
+        self.update_idletasks()
+        height = self.winfo_reqheight()
+        work_x, work_y, work_w, work_h = self._master_window._work_area()
+        x = work_x + work_w - self.WIDTH - self.MARGIN
+        y = work_y + work_h - height - self.MARGIN
+        self.geometry(f"{self.WIDTH}x{height}+{x}+{y}")
+
+    def show(self) -> None:
+        self.refresh()
+        self._position()
+        self.deiconify()
+        self.lift()
+        self.attributes("-topmost", True)
+        self.focus_force()
+
+    def hide(self) -> None:
+        self.withdraw()
+
+    def toggle(self) -> None:
+        if self.state() == "withdrawn":
+            self.show()
+        else:
+            self.hide()
 
 
 class MainWindow(tk.Tk):
@@ -242,6 +335,8 @@ class MainWindow(tk.Tk):
         self._icon_photo = ImageTk.PhotoImage(build_icon_image())
         self.iconphoto(True, self._icon_photo)
 
+        self.flyout = Flyout(self)
+
         self._build_layout()
         self._apply_theme()
         self._apply_list_visibility()
@@ -251,10 +346,11 @@ class MainWindow(tk.Tk):
 
     def _setup_tray(self) -> None:
         self.tray = TrayIcon(
-            on_toggle_visibility=lambda: self.after(0, self._toggle_visibility),
-            on_play_pause=lambda: self.after(0, lambda: run_async(play_pause())),
-            on_next=lambda: self.after(0, lambda: run_async(next_track())),
-            on_previous=lambda: self.after(0, lambda: run_async(previous_track())),
+            on_toggle_flyout=lambda: self.after(0, self.flyout.toggle),
+            on_show_window=lambda: self.after(0, self._show_from_tray),
+            on_play_pause=lambda: self.after(0, _do_play_pause),
+            on_next=lambda: self.after(0, _do_next),
+            on_previous=lambda: self.after(0, _do_previous),
             on_quit=lambda: self.after(0, self._quit),
         )
         self.tray.run_detached()
@@ -263,16 +359,11 @@ class MainWindow(tk.Tk):
         self.withdraw()
 
     def _show_from_tray(self) -> None:
+        self.flyout.hide()
         self.deiconify()
         self.overrideredirect(True)
         self.lift()
         self.focus_force()
-
-    def _toggle_visibility(self) -> None:
-        if self.state() == "withdrawn":
-            self._show_from_tray()
-        else:
-            self._hide_to_tray()
 
     def _quit(self) -> None:
         self.tray.stop()
@@ -496,12 +587,15 @@ class MainWindow(tk.Tk):
         )
 
         self.media_panel.apply_theme(colors)
+        self.flyout.apply_theme(colors)
         for row in self.rows.values():
             row.apply_theme(colors)
 
     def _refresh_loop(self) -> None:
         self._refresh_sessions()
         self.media_panel.refresh()
+        if self.flyout.state() != "withdrawn":
+            self.flyout.refresh()
         self.after(REFRESH_MS, self._refresh_loop)
 
     def _refresh_sessions(self) -> None:
