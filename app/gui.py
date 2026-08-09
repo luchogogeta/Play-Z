@@ -7,6 +7,8 @@ de color, tipografía consistente).
 
 from __future__ import annotations
 
+import ctypes
+import ctypes.wintypes
 import tkinter as tk
 from tkinter import ttk
 
@@ -19,6 +21,7 @@ REFRESH_MS = 1500
 WINDOW_WIDTH = 460
 EXPANDED_HEIGHT = 640
 COLLAPSED_HEIGHT = 330
+SPI_GETWORKAREA = 0x0030
 
 
 class AppRow:
@@ -219,9 +222,16 @@ class MainWindow(tk.Tk):
         self.list_expanded = settings["list_expanded"]
         self.rows: dict[int, AppRow] = {}
 
+        self._maximized = False
+        self._restore_geometry = ""
+        self._drag_offset: tuple[int, int] | None = None
+
         self.title("Reproductor")
         self.resizable(True, True)
         self.minsize(360, 260)
+        self.overrideredirect(True)
+        self._nudge_taskbar_registration()
+        self.protocol("WM_DELETE_WINDOW", self._on_close)
 
         self.style = ttk.Style(self)
         self.style.theme_use("clam")
@@ -232,26 +242,17 @@ class MainWindow(tk.Tk):
         self._center_window()
         self._refresh_loop()
 
+    def _nudge_taskbar_registration(self) -> None:
+        """Sin esto, una ventana sin bordes (overrideredirect) suele no
+        aparecer en la barra de tareas de Windows."""
+        self.wm_attributes("-toolwindow", True)
+        self.after(10, lambda: self.wm_attributes("-toolwindow", False))
+
     def _build_layout(self) -> None:
-        self.header = tk.Frame(self, bd=0, highlightthickness=0)
-        self.header.pack(fill="x", padx=20, pady=(18, 10))
-
-        self.title_label = tk.Label(self.header, text="Reproductor", font=(FONT, 16, "bold"))
-        self.title_label.pack(side="left")
-
-        self.theme_btn = tk.Button(
-            self.header,
-            bd=0,
-            highlightthickness=0,
-            takefocus=0,
-            cursor="hand2",
-            font=(FONT, 12),
-            command=self._toggle_theme,
-        )
-        self.theme_btn.pack(side="right")
+        self._build_titlebar()
 
         self.media_panel = MediaPanel(self, self.colors)
-        self.media_panel.frame.pack(fill="x", padx=20, pady=(0, 16))
+        self.media_panel.frame.pack(fill="x", padx=20, pady=(14, 16))
 
         self.section_toggle = tk.Label(
             self, font=(FONT, 9, "bold"), anchor="w", cursor="hand2"
@@ -291,6 +292,102 @@ class MainWindow(tk.Tk):
             wraplength=320,
             justify="center",
         )
+
+    def _build_titlebar(self) -> None:
+        self.titlebar = tk.Frame(self, bd=0, highlightthickness=0, height=40)
+        self.titlebar.pack(fill="x", side="top")
+        self.titlebar.pack_propagate(False)
+
+        self.title_label = tk.Label(
+            self.titlebar, text="🎵  Reproductor", font=(FONT, 11, "bold"), anchor="w"
+        )
+        self.title_label.pack(side="left", padx=(16, 0))
+
+        self.close_btn = self._make_titlebar_button(
+            self.titlebar, "✕", self._on_close, hover_bg="#e0455c", hover_fg="#ffffff"
+        )
+        self.close_btn.pack(side="right")
+
+        self.maximize_btn = self._make_titlebar_button(self.titlebar, "☐", self._toggle_maximize)
+        self.maximize_btn.pack(side="right")
+
+        self.minimize_btn = self._make_titlebar_button(self.titlebar, "—", self._minimize)
+        self.minimize_btn.pack(side="right")
+
+        self.theme_btn = self._make_titlebar_button(self.titlebar, "", self._toggle_theme)
+        self.theme_btn.pack(side="right", padx=(0, 10))
+
+        for widget in (self.titlebar, self.title_label):
+            widget.bind("<ButtonPress-1>", self._start_move)
+            widget.bind("<B1-Motion>", self._do_move)
+            widget.bind("<Double-Button-1>", lambda e: self._toggle_maximize())
+
+    def _make_titlebar_button(self, parent, text, command, *, hover_bg=None, hover_fg=None):
+        btn = tk.Button(
+            parent,
+            text=text,
+            command=command,
+            bd=0,
+            highlightthickness=0,
+            takefocus=0,
+            cursor="hand2",
+            font=(FONT, 10),
+            width=4,
+        )
+        btn._hover_bg = hover_bg
+        btn._hover_fg = hover_fg
+        btn.bind("<Enter>", lambda e, b=btn: self._on_titlebar_btn_enter(b))
+        btn.bind("<Leave>", lambda e, b=btn: self._on_titlebar_btn_leave(b))
+        return btn
+
+    def _on_titlebar_btn_enter(self, btn: tk.Button) -> None:
+        btn.configure(bg=btn._hover_bg or self.colors["surface_alt"], fg=btn._hover_fg or self.colors["fg"])
+
+    def _on_titlebar_btn_leave(self, btn: tk.Button) -> None:
+        btn.configure(bg=self.colors["bg"], fg=self.colors["fg_muted"])
+
+    def _start_move(self, event) -> None:
+        if self._maximized:
+            return
+        self._drag_offset = (event.x_root - self.winfo_x(), event.y_root - self.winfo_y())
+
+    def _do_move(self, event) -> None:
+        if self._maximized or self._drag_offset is None:
+            return
+        x = event.x_root - self._drag_offset[0]
+        y = event.y_root - self._drag_offset[1]
+        self.geometry(f"+{x}+{y}")
+
+    def _on_close(self) -> None:
+        self.destroy()
+
+    def _minimize(self) -> None:
+        self.overrideredirect(False)
+        self.iconify()
+        self.bind("<Map>", self._on_restore_from_iconic)
+
+    def _on_restore_from_iconic(self, _event) -> None:
+        if self.state() == "normal":
+            self.overrideredirect(True)
+            self.unbind("<Map>")
+
+    @staticmethod
+    def _work_area() -> tuple[int, int, int, int]:
+        rect = ctypes.wintypes.RECT()
+        ctypes.windll.user32.SystemParametersInfoW(SPI_GETWORKAREA, 0, ctypes.byref(rect), 0)
+        return rect.left, rect.top, rect.right - rect.left, rect.bottom - rect.top
+
+    def _toggle_maximize(self) -> None:
+        if self._maximized:
+            self.geometry(self._restore_geometry)
+            self._maximized = False
+            self.maximize_btn.configure(text="☐")
+        else:
+            self._restore_geometry = self.geometry()
+            x, y, width, height = self._work_area()
+            self.geometry(f"{width}x{height}+{x}+{y}")
+            self._maximized = True
+            self.maximize_btn.configure(text="❐")
 
     def _on_mousewheel(self, event) -> None:
         self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
@@ -334,14 +431,11 @@ class MainWindow(tk.Tk):
         colors = self.colors
 
         self.configure(bg=colors["bg"])
-        self.header.configure(bg=colors["bg"])
+        self.titlebar.configure(bg=colors["bg"])
         self.title_label.configure(bg=colors["bg"], fg=colors["fg"])
-        self.theme_btn.configure(
-            text="☀️" if self.theme_name == "dark" else "🌙",
-            bg=colors["bg"],
-            fg=colors["fg_muted"],
-            activebackground=colors["bg"],
-        )
+        self.theme_btn.configure(text="☀️" if self.theme_name == "dark" else "🌙")
+        for btn in (self.theme_btn, self.minimize_btn, self.maximize_btn, self.close_btn):
+            btn.configure(bg=colors["bg"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
         self.section_toggle.configure(bg=colors["bg"], fg=colors["fg_muted"])
         self.list_container.configure(bg=colors["bg"])
         self.canvas.configure(bg=colors["bg"])
