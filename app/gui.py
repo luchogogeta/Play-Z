@@ -16,6 +16,7 @@ from PIL import ImageTk
 
 from .audio_devices import list_output_devices, set_default_output_device
 from .audio_sessions import AppAudioSession, list_app_sessions
+from .icons import extract_app_icon
 from .media_control import get_now_playing, next_track, play_pause, previous_track
 from .media_control import run as run_async
 from .theme import FONT, THEMES, avatar_color, load_settings, save_settings
@@ -48,12 +49,103 @@ def _do_next() -> None:
     run_async(next_track())
 
 
+class VolumeSlider(tk.Canvas):
+    """Control de volumen dibujado a mano: barra redondeada + thumb circular.
+
+    El ttk.Scale por defecto (tema clam) se ve tosco y bloqueado a los
+    colores del tema de ttk; dibujarlo con Canvas da control total y un
+    resultado mucho más prolijo (como los sliders de Spotify o Windows 11).
+    """
+
+    HEIGHT = 20
+    TRACK_WIDTH = 4
+    THUMB_RADIUS = 6
+
+    def __init__(self, parent: tk.Widget, value: float, on_change, on_release=None, **kwargs):
+        super().__init__(parent, height=self.HEIGHT, highlightthickness=0, bd=0, **kwargs)
+        self._value = max(0.0, min(1.0, value))
+        self._on_change = on_change
+        self._on_release = on_release
+        self._dragging = False
+        self._track_color = "#888888"
+        self._fill_color = "#8b7cff"
+        self._thumb_color = "#ffffff"
+
+        self.bind("<Configure>", lambda e: self._redraw())
+        self.bind("<ButtonPress-1>", self._on_press)
+        self.bind("<B1-Motion>", self._on_drag)
+        self.bind("<ButtonRelease-1>", self._on_button_release)
+
+    def set_colors(self, *, track: str, fill: str, thumb: str) -> None:
+        self._track_color = track
+        self._fill_color = fill
+        self._thumb_color = thumb
+        self._redraw()
+
+    def set(self, value: float) -> None:
+        if self._dragging:
+            return
+        self._value = max(0.0, min(1.0, value))
+        self._redraw()
+
+    def get(self) -> float:
+        return self._value
+
+    @property
+    def is_dragging(self) -> bool:
+        return self._dragging
+
+    def _usable_width(self) -> float:
+        return max(self.winfo_width() - 2 * self.THUMB_RADIUS, 1)
+
+    def _value_to_x(self, value: float) -> float:
+        return self.THUMB_RADIUS + value * self._usable_width()
+
+    def _x_to_value(self, x: float) -> float:
+        return max(0.0, min(1.0, (x - self.THUMB_RADIUS) / self._usable_width()))
+
+    def _redraw(self) -> None:
+        self.delete("all")
+        width = self.winfo_width()
+        y = self.HEIGHT / 2
+        x0, x1 = self.THUMB_RADIUS, width - self.THUMB_RADIUS
+        if x1 <= x0:
+            return
+
+        self.create_line(x0, y, x1, y, width=self.TRACK_WIDTH, fill=self._track_color, capstyle=tk.ROUND)
+        fill_x = self._value_to_x(self._value)
+        if fill_x > x0:
+            self.create_line(x0, y, fill_x, y, width=self.TRACK_WIDTH, fill=self._fill_color, capstyle=tk.ROUND)
+
+        r = self.THUMB_RADIUS
+        self.create_oval(fill_x - r, y - r, fill_x + r, y + r, fill=self._thumb_color, outline="")
+
+    def _set_from_event(self, event, *, final: bool) -> None:
+        self._value = self._x_to_value(event.x)
+        self._redraw()
+        if self._on_change:
+            self._on_change(self._value)
+        if final and self._on_release:
+            self._on_release(self._value)
+
+    def _on_press(self, event) -> None:
+        self._dragging = True
+        self._set_from_event(event, final=False)
+
+    def _on_drag(self, event) -> None:
+        if self._dragging:
+            self._set_from_event(event, final=False)
+
+    def _on_button_release(self, event) -> None:
+        self._dragging = False
+        self._set_from_event(event, final=True)
+
+
 class AppRow:
-    """Tarjeta de una app: avatar, nombre, % de volumen, slider y mute."""
+    """Tarjeta de una app: ícono, nombre, % de volumen, slider y mute."""
 
     def __init__(self, parent: tk.Widget, session: AppAudioSession, colors: dict):
         self.pid = session.pid
-        self._dragging = False
         self._session = session
         self.colors = colors
 
@@ -61,7 +153,7 @@ class AppRow:
         self.card.pack(fill="x", pady=(0, 10))
         self.card.columnconfigure(1, weight=1)
 
-        self.avatar = tk.Canvas(self.card, width=36, height=36, highlightthickness=0, bd=0)
+        self._build_icon(session)
         self.avatar.grid(row=0, column=0, rowspan=2, padx=(14, 12), pady=14)
 
         self.name_label = tk.Label(
@@ -83,42 +175,32 @@ class AppRow:
         )
         self.mute_btn.grid(row=0, column=3, rowspan=2, padx=(0, 14))
 
-        self.volume_var = tk.DoubleVar(value=session.volume * 100)
-        self.scale = ttk.Scale(
-            self.card,
-            from_=0,
-            to=100,
-            orient="horizontal",
-            variable=self.volume_var,
-            command=self._on_scale_move,
-            style="Vol.Horizontal.TScale",
+        self.slider = VolumeSlider(
+            self.card, value=session.volume, on_change=self._on_slider_change
         )
-        self.scale.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 8), pady=(2, 14))
-        self.scale.bind("<ButtonPress-1>", lambda e: setattr(self, "_dragging", True))
-        self.scale.bind("<ButtonRelease-1>", self._on_scale_release)
+        self.slider.grid(row=1, column=1, columnspan=2, sticky="ew", padx=(0, 8), pady=(2, 14))
 
-        self._draw_avatar()
         self._set_percent_label(session.volume)
         self.apply_theme(colors)
 
-    def _draw_avatar(self) -> None:
-        self.avatar.delete("all")
-        self.avatar.create_oval(2, 2, 34, 34, fill=avatar_color(self._session.name), outline="")
-        letter = (self._session.name[:1] or "?").upper()
-        self.avatar.create_text(18, 18, text=letter, fill="#ffffff", font=(FONT, 12, "bold"))
+    def _build_icon(self, session: AppAudioSession) -> None:
+        """Ícono real de la app si se pudo extraer; si no, un avatar de color."""
+        icon_image = extract_app_icon(session.exe_path, size=36) if session.exe_path else None
+        if icon_image is not None:
+            self._icon_photo = ImageTk.PhotoImage(icon_image)
+            self.avatar = tk.Label(self.card, image=self._icon_photo, bd=0, highlightthickness=0)
+        else:
+            self.avatar = tk.Canvas(self.card, width=36, height=36, highlightthickness=0, bd=0)
+            self.avatar.create_oval(2, 2, 34, 34, fill=avatar_color(session.name), outline="")
+            letter = (session.name[:1] or "?").upper()
+            self.avatar.create_text(18, 18, text=letter, fill="#ffffff", font=(FONT, 12, "bold"))
 
     def _set_percent_label(self, volume: float) -> None:
         self.percent_label.configure(text=f"{round(volume * 100)}%")
 
-    def _on_scale_move(self, value: str) -> None:
-        volume = float(value) / 100
-        self._set_percent_label(volume)
-        if self._dragging:
-            self._session.set_volume(volume)
-
-    def _on_scale_release(self, _event) -> None:
-        self._dragging = False
-        self._session.set_volume(self.volume_var.get() / 100)
+    def _on_slider_change(self, value: float) -> None:
+        self._set_percent_label(value)
+        self._session.set_volume(value)
 
     def _on_mute_toggle(self) -> None:
         muted = not self._session.muted
@@ -133,8 +215,8 @@ class AppRow:
 
     def update_from(self, session: AppAudioSession) -> None:
         self._session = session
-        if not self._dragging:
-            self.volume_var.set(session.volume * 100)
+        self.slider.set(session.volume)
+        if not self.slider.is_dragging:
             self._set_percent_label(session.volume)
         self._update_mute_button(session.muted)
 
@@ -145,6 +227,8 @@ class AppRow:
         self.name_label.configure(bg=colors["surface"], fg=colors["fg"])
         self.percent_label.configure(bg=colors["surface"], fg=colors["fg_muted"])
         self.mute_btn.configure(bg=colors["surface"], activebackground=colors["surface_alt"])
+        self.slider.configure(bg=colors["surface"])
+        self.slider.set_colors(track=colors["surface_alt"], fill=colors["accent"], thumb=colors["fg"])
         self._update_mute_button(self._session.muted)
 
     def destroy(self) -> None:
@@ -619,14 +703,6 @@ class MainWindow(tk.Tk):
         self.rows_frame.configure(bg=colors["bg"])
         self.empty_label.configure(bg=colors["bg"], fg=colors["fg_muted"])
 
-        self.style.configure(
-            "Vol.Horizontal.TScale",
-            troughcolor=colors["surface_alt"],
-            background=colors["surface"],
-            lightcolor=colors["accent"],
-            darkcolor=colors["accent"],
-            bordercolor=colors["surface"],
-        )
         self.style.configure(
             "Nice.Vertical.TScrollbar",
             background=colors["border"],

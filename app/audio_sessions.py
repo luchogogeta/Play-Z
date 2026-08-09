@@ -20,6 +20,7 @@ class AppAudioSession:
     name: str
     volume: float  # 0.0 - 1.0
     muted: bool
+    exe_path: str | None
     _volume_interface: Any = field(repr=False)
 
     def set_volume(self, value: float) -> None:
@@ -49,6 +50,11 @@ def list_app_sessions() -> list[AppAudioSession]:
         except Exception:
             name = f"PID {process.pid}"
 
+        try:
+            exe_path = process.exe()
+        except Exception:
+            exe_path = None
+
         volume_interface = session.SimpleAudioVolume
         if volume_interface is None:
             continue
@@ -59,6 +65,7 @@ def list_app_sessions() -> list[AppAudioSession]:
                 name=name,
                 volume=volume_interface.GetMasterVolume(),
                 muted=bool(volume_interface.GetMute()),
+                exe_path=exe_path,
                 _volume_interface=volume_interface,
             )
         )
