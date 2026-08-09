@@ -254,6 +254,68 @@ class MasterVolumeControl:
         self._update_mute_button()
 
 
+class CanvasTransportControls:
+    """Botones ⏮ ⏯ ⏭ dibujados directo sobre un Canvas, sin fondo cuadrado,
+    para no tapar la imagen de fondo. Solo play lleva un círculo de color;
+    anterior/siguiente son íconos "flotantes" con una sombra sutil para
+    leerse sobre cualquier imagen (se apaga sola si no hay portada)."""
+
+    def __init__(
+        self,
+        canvas: tk.Canvas,
+        *,
+        gap: float = 46,
+        play_radius: float = 21,
+        side_font_size: int = 14,
+        play_font_size: int = 16,
+    ):
+        self.canvas = canvas
+        self._gap = gap
+        self._play_radius = play_radius
+
+        side_font = (FONT, side_font_size)
+        play_font = (FONT, play_font_size, "bold")
+
+        self._prev_shadow = canvas.create_text(0, 0, text="⏮", font=side_font)
+        self._prev_label = canvas.create_text(0, 0, text="⏮", font=side_font)
+        self._play_circle = canvas.create_oval(0, 0, 1, 1, outline="")
+        self._play_label = canvas.create_text(0, 0, text="⏯", font=play_font)
+        self._next_shadow = canvas.create_text(0, 0, text="⏭", font=side_font)
+        self._next_label = canvas.create_text(0, 0, text="⏭", font=side_font)
+
+        self._bind_click((self._prev_shadow, self._prev_label), _do_previous)
+        self._bind_click((self._play_circle, self._play_label), _do_play_pause)
+        self._bind_click((self._next_shadow, self._next_label), _do_next)
+
+    def _bind_click(self, items: tuple[int, ...], command) -> None:
+        for item in items:
+            self.canvas.tag_bind(item, "<Button-1>", lambda e: command())
+            self.canvas.tag_bind(item, "<Enter>", lambda e: self.canvas.config(cursor="hand2"))
+            self.canvas.tag_bind(item, "<Leave>", lambda e: self.canvas.config(cursor=""))
+
+    def position(self, center_x: float, y: float) -> None:
+        gap, r = self._gap, self._play_radius
+        self.canvas.coords(self._prev_shadow, center_x - gap + 1, y + 1)
+        self.canvas.coords(self._prev_label, center_x - gap, y)
+        self.canvas.coords(self._play_circle, center_x - r, y - r, center_x + r, y + r)
+        self.canvas.coords(self._play_label, center_x, y)
+        self.canvas.coords(self._next_shadow, center_x + gap + 1, y + 1)
+        self.canvas.coords(self._next_label, center_x + gap, y)
+
+    def apply_theme(self, colors: dict, has_art: bool) -> None:
+        if has_art:
+            icon_fill, icon_shadow = "#ffffff", "#000000"
+        else:
+            icon_fill = colors["fg_muted"]
+            icon_shadow = colors["surface"]  # se funde con el fondo plano: invisible
+
+        for shadow, label in ((self._prev_shadow, self._prev_label), (self._next_shadow, self._next_label)):
+            self.canvas.itemconfig(shadow, fill=icon_shadow)
+            self.canvas.itemconfig(label, fill=icon_fill)
+        self.canvas.itemconfig(self._play_circle, fill=colors["accent"])
+        self.canvas.itemconfig(self._play_label, fill=colors["accent_fg"])
+
+
 class AppRow:
     """Tarjeta de una app: ícono, nombre, % de volumen, slider y mute."""
 
@@ -350,9 +412,15 @@ class AppRow:
 
 class MediaPanel:
     """Tarjeta superior: la portada/miniatura de fondo + qué está sonando +
-    play/pause/siguiente/anterior — como el "now playing" de Spotify."""
+    play/pause/siguiente/anterior — como el "now playing" de Spotify.
+
+    El texto queda abajo a la izquierda y los controles abajo a la derecha,
+    para no quedar los dos apilados justo en el centro de la imagen (que
+    suele ser donde está lo importante de una foto o miniatura)."""
 
     HEIGHT = 150
+    CONTROLS_GAP = 44
+    CONTROLS_MARGIN = 30
 
     def __init__(self, parent: tk.Widget, colors: dict):
         self.colors = colors
@@ -371,31 +439,11 @@ class MediaPanel:
             18, self.HEIGHT - 54, anchor="w", text="Reproducí algo para verlo acá", font=(FONT, 10)
         )
 
-        self.controls = tk.Frame(self.frame, bd=0, highlightthickness=0)
-        self.prev_btn = self._make_button(self.controls, "⏮", _do_previous, size=13)
-        self.prev_btn.grid(row=0, column=0, padx=6)
-        self.play_btn = self._make_button(self.controls, "⏯", _do_play_pause, size=16, bold=True)
-        self.play_btn.grid(row=0, column=1, padx=10)
-        self.next_btn = self._make_button(self.controls, "⏭", _do_next, size=13)
-        self.next_btn.grid(row=0, column=2, padx=6)
-        self._controls_id = self.frame.create_window(0, self.HEIGHT - 18, anchor="s", window=self.controls)
+        self.controls = CanvasTransportControls(
+            self.frame, gap=self.CONTROLS_GAP, play_radius=21, side_font_size=14, play_font_size=16
+        )
 
         self.apply_theme(colors)
-
-    @staticmethod
-    def _make_button(parent, text, command, *, size, bold=False):
-        weight = "bold" if bold else "normal"
-        return tk.Button(
-            parent,
-            text=text,
-            command=command,
-            bd=0,
-            highlightthickness=0,
-            takefocus=0,
-            cursor="hand2",
-            width=3,
-            font=(FONT, size, weight),
-        )
 
     def refresh(self) -> None:
         now_playing = _fetch_now_playing()
@@ -434,24 +482,15 @@ class MediaPanel:
             self.frame.tag_lower(self._bg_id)
         else:
             self.frame.itemconfig(self._bg_id, image=self._bg_photo)
-        self.frame.coords(self._controls_id, width / 2, self.HEIGHT - 18)
+        self.controls.position(width - self.CONTROLS_MARGIN - self.CONTROLS_GAP, self.HEIGHT - 24)
         self._update_text_style()
 
     def _update_text_style(self) -> None:
         colors = self.colors
         has_art = self._thumbnail is not None
-        title_fg = "#ffffff" if has_art else colors["fg"]
-        artist_fg = "#e2e2e8" if has_art else colors["fg_muted"]
-        btn_bg = "#0a0a0e" if has_art else colors["surface"]
-        btn_fg = "#e2e2e8" if has_art else colors["fg_muted"]
-        hover_bg = "#1c1c22" if has_art else colors["surface_alt"]
-
-        self.frame.itemconfig(self._title_id, fill=title_fg)
-        self.frame.itemconfig(self._artist_id, fill=artist_fg)
-        self.controls.configure(bg=btn_bg)
-        for btn in (self.prev_btn, self.next_btn):
-            btn.configure(bg=btn_bg, fg=btn_fg, activebackground=hover_bg)
-        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+        self.frame.itemconfig(self._title_id, fill="#ffffff" if has_art else colors["fg"])
+        self.frame.itemconfig(self._artist_id, fill="#e2e2e8" if has_art else colors["fg_muted"])
+        self.controls.apply_theme(colors, has_art)
 
     def apply_theme(self, colors: dict) -> None:
         self.colors = colors
@@ -467,6 +506,8 @@ class Flyout(tk.Toplevel):
     WIDTH = 280
     ART_HEIGHT = 130
     MARGIN = 10
+    CONTROLS_GAP = 36
+    CONTROLS_MARGIN = 24
 
     def __init__(self, master: "MainWindow"):
         super().__init__(master)
@@ -495,15 +536,8 @@ class Flyout(tk.Toplevel):
             16, self.ART_HEIGHT - 40, anchor="w", text="", font=(FONT, 9)
         )
 
-        self.controls = tk.Frame(self.art_canvas, bd=0, highlightthickness=0)
-        self.prev_btn = MediaPanel._make_button(self.controls, "⏮", _do_previous, size=13)
-        self.prev_btn.grid(row=0, column=0, padx=6)
-        self.play_btn = MediaPanel._make_button(self.controls, "⏯", _do_play_pause, size=16, bold=True)
-        self.play_btn.grid(row=0, column=1, padx=10)
-        self.next_btn = MediaPanel._make_button(self.controls, "⏭", _do_next, size=13)
-        self.next_btn.grid(row=0, column=2, padx=6)
-        self._controls_id = self.art_canvas.create_window(
-            0, self.ART_HEIGHT - 14, anchor="s", window=self.controls
+        self.controls = CanvasTransportControls(
+            self.art_canvas, gap=self.CONTROLS_GAP, play_radius=18, side_font_size=12, play_font_size=14
         )
 
         self.master_volume = MasterVolumeControl(self.card)
@@ -549,24 +583,15 @@ class Flyout(tk.Toplevel):
             self.art_canvas.tag_lower(self._bg_id)
         else:
             self.art_canvas.itemconfig(self._bg_id, image=self._bg_photo)
-        self.art_canvas.coords(self._controls_id, width / 2, self.ART_HEIGHT - 14)
+        self.controls.position(width - self.CONTROLS_MARGIN - self.CONTROLS_GAP, self.ART_HEIGHT - 20)
         self._update_text_style()
 
     def _update_text_style(self) -> None:
         colors = self.colors
         has_art = self._thumbnail is not None
-        title_fg = "#ffffff" if has_art else colors["fg"]
-        artist_fg = "#e2e2e8" if has_art else colors["fg_muted"]
-        btn_bg = "#0a0a0e" if has_art else colors["surface"]
-        btn_fg = "#e2e2e8" if has_art else colors["fg_muted"]
-        hover_bg = "#1c1c22" if has_art else colors["surface_alt"]
-
-        self.art_canvas.itemconfig(self._title_id, fill=title_fg)
-        self.art_canvas.itemconfig(self._artist_id, fill=artist_fg)
-        self.controls.configure(bg=btn_bg)
-        for btn in (self.prev_btn, self.next_btn):
-            btn.configure(bg=btn_bg, fg=btn_fg, activebackground=hover_bg)
-        self.play_btn.configure(bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"])
+        self.art_canvas.itemconfig(self._title_id, fill="#ffffff" if has_art else colors["fg"])
+        self.art_canvas.itemconfig(self._artist_id, fill="#e2e2e8" if has_art else colors["fg_muted"])
+        self.controls.apply_theme(colors, has_art)
 
     def apply_theme(self, colors: dict) -> None:
         self.colors = colors
