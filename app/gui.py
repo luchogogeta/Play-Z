@@ -12,10 +12,13 @@ import ctypes.wintypes
 import tkinter as tk
 from tkinter import ttk
 
+from PIL import ImageTk
+
 from .audio_sessions import AppAudioSession, list_app_sessions
 from .media_control import get_now_playing, next_track, play_pause, previous_track
 from .media_control import run as run_async
 from .theme import FONT, THEMES, avatar_color, load_settings, save_settings
+from .tray import TrayIcon, build_icon_image
 
 REFRESH_MS = 1500
 WINDOW_WIDTH = 460
@@ -236,11 +239,44 @@ class MainWindow(tk.Tk):
         self.style = ttk.Style(self)
         self.style.theme_use("clam")
 
+        self._icon_photo = ImageTk.PhotoImage(build_icon_image())
+        self.iconphoto(True, self._icon_photo)
+
         self._build_layout()
         self._apply_theme()
         self._apply_list_visibility()
         self._center_window()
+        self._setup_tray()
         self._refresh_loop()
+
+    def _setup_tray(self) -> None:
+        self.tray = TrayIcon(
+            on_toggle_visibility=lambda: self.after(0, self._toggle_visibility),
+            on_play_pause=lambda: self.after(0, lambda: run_async(play_pause())),
+            on_next=lambda: self.after(0, lambda: run_async(next_track())),
+            on_previous=lambda: self.after(0, lambda: run_async(previous_track())),
+            on_quit=lambda: self.after(0, self._quit),
+        )
+        self.tray.run_detached()
+
+    def _hide_to_tray(self) -> None:
+        self.withdraw()
+
+    def _show_from_tray(self) -> None:
+        self.deiconify()
+        self.overrideredirect(True)
+        self.lift()
+        self.focus_force()
+
+    def _toggle_visibility(self) -> None:
+        if self.state() == "withdrawn":
+            self._show_from_tray()
+        else:
+            self._hide_to_tray()
+
+    def _quit(self) -> None:
+        self.tray.stop()
+        self.destroy()
 
     def _nudge_taskbar_registration(self) -> None:
         """Sin esto, una ventana sin bordes (overrideredirect) suele no
@@ -359,7 +395,7 @@ class MainWindow(tk.Tk):
         self.geometry(f"+{x}+{y}")
 
     def _on_close(self) -> None:
-        self.destroy()
+        self._hide_to_tray()
 
     def _minimize(self) -> None:
         self.overrideredirect(False)
@@ -496,4 +532,7 @@ class MainWindow(tk.Tk):
 
 def main() -> None:
     app = MainWindow()
-    app.mainloop()
+    try:
+        app.mainloop()
+    finally:
+        app.tray.stop()

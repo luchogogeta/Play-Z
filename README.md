@@ -15,6 +15,10 @@ anterior) de lo que esté sonando, todo desde una sola ventana.
   volver a la anterior. Funciona con cualquier app compatible con los
   controles multimedia de Windows (System Media Transport Controls), sin
   integración específica por app.
+- **Bandeja del sistema**: al cerrar la ventana (✕) el programa no se
+  cierra, se minimiza al área de notificación (al lado del reloj) y sigue
+  corriendo. Desde ese ícono se puede mostrar/ocultar la ventana, controlar
+  la reproducción (⏮ ⏯ ⏭) y salir de verdad.
 
 ## Requisitos
 
@@ -68,6 +72,7 @@ app/audio_sessions.py    Volumen por aplicación (pycaw / Core Audio)
 app/media_control.py     Play/pause/siguiente/anterior (WinRT SMTC)
 app/gui.py               Interfaz gráfica (Tkinter)
 app/theme.py             Colores claro/oscuro y preferencias guardadas
+app/tray.py              Ícono de la bandeja del sistema
 Reproductor.spec         Configuración de PyInstaller para el .exe
 ```
 
