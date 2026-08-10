@@ -65,7 +65,7 @@ class TrayIcon:
             pystray.Menu.SEPARATOR,
             pystray.MenuItem("Salir", lambda icon, item: on_quit()),
         )
-        self._icon = pystray.Icon("Reproductor", build_icon_image(), "Reproductor", menu)
+        self._icon = pystray.Icon("Play-Z", build_icon_image(), "Play-Z", menu)
 
     def run_detached(self) -> None:
         """Arranca el ícono en su propio hilo (soportado en Windows)."""

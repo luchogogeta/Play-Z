@@ -1,4 +1,4 @@
-"""Punto de entrada del Reproductor."""
+"""Punto de entrada de Play-Z."""
 
 from app.gui import main
 

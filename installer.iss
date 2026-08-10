@@ -1,20 +1,20 @@
-; Instalador de Reproductor (Inno Setup).
+; Instalador de Play-Z (Inno Setup).
 ;
-; Instala en la carpeta del usuario actual (%LocalAppData%\Programs\Reproductor)
+; Instala en la carpeta del usuario actual (%LocalAppData%\Programs\Play-Z)
 ; para no requerir permisos de administrador, con acceso directo en el menú
 ; inicio y, opcionalmente, en el escritorio, más un desinstalador normal
 ; (aparece en "Agregar o quitar programas").
 ;
-; Requiere haber generado antes dist\Reproductor\ con:
-;   pyinstaller Reproductor.spec
+; Requiere haber generado antes dist\Play-Z\ con:
+;   pyinstaller Play-Z.spec
 
-#define MyAppName "Reproductor"
+#define MyAppName "Play-Z"
 #define MyAppVersion "1.0.0"
 #define MyAppPublisher "luchogogeta"
-#define MyAppExeName "Reproductor.exe"
+#define MyAppExeName "Play-Z.exe"
 
 [Setup]
-AppId={{B6E1B2E2-2F3B-4B7D-9C1A-2E6F6E6C4F1A}
+AppId={{ABC4ED89-DE0A-45C4-A62E-C860444F9082}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
@@ -23,7 +23,7 @@ DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 PrivilegesRequired=lowest
 OutputDir=dist
-OutputBaseFilename=Instalar-Reproductor
+OutputBaseFilename=Instalar-Play-Z
 SetupIconFile=icon.ico
 UninstallDisplayIcon={app}\{#MyAppExeName}
 Compression=lzma2/max
@@ -39,7 +39,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"
 
 [Files]
-Source: "dist\Reproductor\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
+Source: "dist\Play-Z\*"; DestDir: "{app}"; Flags: recursesubdirs ignoreversion
 
 [Icons]
 Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"

@@ -50,7 +50,7 @@ _DEFAULTS = {"theme": "dark", "list_expanded": False}
 
 def _settings_path() -> Path:
     """Carpeta de datos del usuario, estable tanto en dev como empaquetado (.exe)."""
-    base = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Reproductor"
+    base = Path(os.environ.get("LOCALAPPDATA", str(Path.home()))) / "Play-Z"
     base.mkdir(parents=True, exist_ok=True)
     return base / "settings.json"
 

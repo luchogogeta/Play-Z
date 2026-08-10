@@ -640,7 +640,7 @@ class MainWindow(tk.Tk):
         self._restore_geometry = ""
         self._drag_offset: tuple[int, int] | None = None
 
-        self.title("Reproductor")
+        self.title("Play-Z")
         self.resizable(True, True)
         self.minsize(360, 260)
         self.overrideredirect(True)
@@ -748,7 +748,7 @@ class MainWindow(tk.Tk):
         self.titlebar.pack_propagate(False)
 
         self.title_label = tk.Label(
-            self.titlebar, text="🎵  Reproductor", font=(FONT, 11, "bold"), anchor="w"
+            self.titlebar, text="🎵  Play-Z", font=(FONT, 11, "bold"), anchor="w"
         )
         self.title_label.pack(side="left", padx=(16, 0))
 

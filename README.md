@@ -1,4 +1,4 @@
-# Reproductor
+# Play-Z
 
 Un reproductor/mezclador pequeño para Windows: controla el volumen de cada
 aplicación por separado y maneja la reproducción (play/pause, siguiente,
@@ -61,15 +61,15 @@ como un ejecutable con [PyInstaller](https://pyinstaller.org/):
 
 ```bash
 pip install -r requirements-dev.txt
-pyinstaller Reproductor.spec
+pyinstaller Play-Z.spec
 ```
 
-Esto genera la carpeta `dist/Reproductor/`, con `Reproductor.exe` adentro
-junto a una carpeta `_internal/` con sus dependencias. Para abrir la app,
-doble clic en `Reproductor.exe` (sin ventana de consola) — o creá un
-acceso directo a ese `.exe` en el Escritorio o el menú inicio. Toda la
-carpeta `dist/Reproductor/` se puede mover junta a cualquier lado, pero
-tiene que viajar completa (el `.exe` no funciona separado de `_internal/`).
+Esto genera la carpeta `dist/Play-Z/`, con `Play-Z.exe` adentro junto a una
+carpeta `_internal/` con sus dependencias. Para abrir la app, doble clic en
+`Play-Z.exe` (sin ventana de consola) — o creá un acceso directo a ese
+`.exe` en el Escritorio o el menú inicio. Toda la carpeta `dist/Play-Z/` se
+puede mover junta a cualquier lado, pero tiene que viajar completa (el
+`.exe` no funciona separado de `_internal/`).
 
 > Se usa `--onedir` (carpeta) en vez de `--onefile` (un solo archivo) a
 > propósito: un `.exe` de un solo archivo se descomprime a una carpeta
@@ -83,7 +83,7 @@ suelta, hay un instalador hecho con [Inno Setup](https://jrsoftware.org/isinfo.p
 (gratis). Con Inno Setup instalado:
 
 ```bash
-pyinstaller Reproductor.spec
+pyinstaller Play-Z.spec
 "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 ```
 
@@ -91,7 +91,7 @@ pyinstaller Reproductor.spec
 Inno Setup — con winget suele quedar en
 `%LocalAppData%\Programs\Inno Setup 6\ISCC.exe`.)
 
-Esto genera `dist/Instalar-Reproductor.exe`: un instalador normal (elegís
+Esto genera `dist/Instalar-Play-Z.exe`: un instalador normal (elegís
 carpeta, se crea acceso directo en el menú inicio y, si querés, en el
 escritorio) que no pide permisos de administrador — instala en la carpeta
 del usuario actual — y deja un desinstalador propio en "Agregar o quitar
@@ -113,7 +113,7 @@ app/media_control.py     Play/pause/siguiente/anterior (WinRT SMTC)
 app/gui.py               Interfaz gráfica (Tkinter)
 app/theme.py             Colores claro/oscuro y preferencias guardadas
 app/tray.py              Ícono de la bandeja del sistema
-Reproductor.spec         Configuración de PyInstaller para el .exe
+Play-Z.spec              Configuración de PyInstaller para el .exe
 installer.iss            Configuración de Inno Setup para el instalador
 icon.ico                 Ícono de la app (ventana, .exe, accesos directos)
 ```

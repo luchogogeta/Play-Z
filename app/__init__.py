@@ -1,1 +1,1 @@
-"""Reproductor: mezclador de volumen por aplicación y controles multimedia."""
+"""Play-Z: mezclador de volumen por aplicación y controles multimedia."""

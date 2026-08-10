@@ -3,6 +3,5 @@ __pycache__/
 *.pyc
 .venv/
 venv/
-.reproductor_settings.json
 build/
 dist/
