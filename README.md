@@ -4,6 +4,15 @@ Un reproductor/mezclador pequeño para Windows: controla el volumen de cada
 aplicación por separado y maneja la reproducción (play/pause, siguiente,
 anterior) de lo que esté sonando, todo desde una sola ventana.
 
+## Descargar
+
+**[⬇ Descargar Instalar-Play-Z.exe](https://github.com/luchogogeta/Play-Z/releases/latest/download/Instalar-Play-Z.exe)**
+(última versión — ver todas en [Releases](https://github.com/luchogogeta/Play-Z/releases))
+
+No pide permisos de administrador. Windows SmartScreen puede avisar que es
+de un editor no reconocido (no está firmado digitalmente) — "Más
+información → Ejecutar de todas formas".
+
 ## Descripción
 
 - **Volumen por aplicación**: lista las apps que tienen audio activo (Spotify,
