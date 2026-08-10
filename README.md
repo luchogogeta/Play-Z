@@ -76,6 +76,32 @@ tiene que viajar completa (el `.exe` no funciona separado de `_internal/`).
 > temporal cada vez que se abre, lo que acá tardaba varios segundos. Con
 > `--onedir` los archivos ya están en disco y arranca casi al instante.
 
+## Generar el instalador
+
+Para pasarle la app a alguien más sin que tenga que lidiar con una carpeta
+suelta, hay un instalador hecho con [Inno Setup](https://jrsoftware.org/isinfo.php)
+(gratis). Con Inno Setup instalado:
+
+```bash
+pyinstaller Reproductor.spec
+"C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
+```
+
+(La ruta del `ISCC.exe` puede variar según dónde haya quedado instalado
+Inno Setup — con winget suele quedar en
+`%LocalAppData%\Programs\Inno Setup 6\ISCC.exe`.)
+
+Esto genera `dist/Instalar-Reproductor.exe`: un instalador normal (elegís
+carpeta, se crea acceso directo en el menú inicio y, si querés, en el
+escritorio) que no pide permisos de administrador — instala en la carpeta
+del usuario actual — y deja un desinstalador propio en "Agregar o quitar
+programas".
+
+> Como no está firmado con un certificado de firma de código (eso tiene
+> costo y no se hizo sin pedirlo explícitamente), Windows SmartScreen
+> puede mostrar una advertencia la primera vez que alguien lo abre. Se
+> resuelve con "Más información → Ejecutar de todas formas".
+
 ## Estructura
 
 ```
@@ -88,6 +114,8 @@ app/gui.py               Interfaz gráfica (Tkinter)
 app/theme.py             Colores claro/oscuro y preferencias guardadas
 app/tray.py              Ícono de la bandeja del sistema
 Reproductor.spec         Configuración de PyInstaller para el .exe
+installer.iss            Configuración de Inno Setup para el instalador
+icon.ico                 Ícono de la app (ventana, .exe, accesos directos)
 ```
 
 ## Estado
