@@ -599,14 +599,29 @@ class Flyout(tk.Toplevel):
         self.bind("<FocusOut>", self._on_focus_out)
 
     def _on_focus_out(self, _event) -> None:
-        # El desplegable de dispositivos de salida (ttk.Combobox) le hace
-        # perder el foco a la ventana un instante al abrirse, aunque en
-        # realidad el foco vuelve enseguida al propio combobox — así que en
-        # vez de esconder de una, se espera un toque y se fija si el foco
-        # realmente se fue afuera del panelito o si fue eso.
+        # El desplegable de dispositivos de salida (ttk.Combobox) es, por
+        # dentro, otra ventana de Windows aparte (".popdown") — al abrirse
+        # le roba el foco de verdad al panelito, no solo un instante.
+        # Por eso no alcanza con mirar el foco: se revisa directamente si
+        # ese desplegable sigue abierto antes de decidir si esconder.
         self.after(120, self._hide_if_focus_left)
 
+    def _is_output_dropdown_open(self) -> bool:
+        popdown = f"{self.output_selector.combo}.popdown"
+        try:
+            exists = self.tk.call("winfo", "exists", popdown)
+            if not int(exists):
+                return False
+            return bool(int(self.tk.call("winfo", "ismapped", popdown)))
+        except Exception:
+            return False
+
     def _hide_if_focus_left(self) -> None:
+        if self._is_output_dropdown_open():
+            # Sigue abierto: revisar de nuevo más adelante en vez de
+            # esconder, para no cerrarlo mientras el usuario lo está usando.
+            self.after(200, self._hide_if_focus_left)
+            return
         try:
             focused = self.focus_get()
         except KeyError:
