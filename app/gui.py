@@ -190,6 +190,56 @@ class VolumeSlider(tk.Canvas):
         self._set_from_event(event, final=True)
 
 
+class OutputDeviceSelector:
+    """Desplegable para elegir el dispositivo de salida (parlantes/
+    auriculares), como el que tiene EarTrumpet arriba de todo — reutilizable
+    en la ventana completa y en el flyout de la bandeja."""
+
+    def __init__(self, parent: tk.Widget):
+        self._device_by_name: dict[str, str] = {}
+
+        self.frame = tk.Frame(parent, bd=0, highlightthickness=0)
+
+        self.icon_label = tk.Label(self.frame, text="🔊", font=(FONT, 11))
+        self.icon_label.pack(side="left")
+
+        self.output_var = tk.StringVar()
+        self.combo = ttk.Combobox(
+            self.frame, textvariable=self.output_var, state="readonly", font=(FONT, 9)
+        )
+        self.combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
+        self.combo.bind("<<ComboboxSelected>>", self._on_selected)
+
+        self.refresh()
+
+    def refresh(self) -> None:
+        try:
+            devices = list_output_devices()
+        except Exception:
+            devices = []
+
+        self._device_by_name = {d.name: d.id for d in devices}
+        self.combo.configure(values=list(self._device_by_name.keys()))
+
+        current = next((d.name for d in devices if d.is_default), None)
+        # No pisar la selección mientras el desplegable está abierto.
+        if current and self.output_var.get() != current:
+            self.output_var.set(current)
+
+    def _on_selected(self, _event) -> None:
+        device_id = self._device_by_name.get(self.output_var.get())
+        if device_id:
+            try:
+                set_default_output_device(device_id)
+            except Exception:
+                pass
+        self.combo.selection_clear()
+
+    def apply_theme(self, colors: dict, bg_color: str) -> None:
+        self.frame.configure(bg=bg_color)
+        self.icon_label.configure(bg=bg_color, fg=colors["fg_muted"])
+
+
 class MasterVolumeControl:
     """Fila de volumen general del sistema (todas las apps a la vez), con
     su propio mute — se usa tanto en la ventana completa como en el flyout."""
@@ -525,6 +575,9 @@ class Flyout(tk.Toplevel):
         self.card = tk.Frame(self, bd=0, highlightthickness=1)
         self.card.pack(fill="both", expand=True)
 
+        self.output_selector = OutputDeviceSelector(self.card)
+        self.output_selector.frame.pack(fill="x", padx=16, pady=(14, 10))
+
         self.art_canvas = tk.Canvas(self.card, height=self.ART_HEIGHT, highlightthickness=0, bd=0)
         self.art_canvas.pack(fill="x")
         self.art_canvas.bind("<Configure>", lambda e: self._redraw())
@@ -555,6 +608,7 @@ class Flyout(tk.Toplevel):
             self.art_canvas.itemconfig(self._title_id, text=now_playing.title)
             self.art_canvas.itemconfig(self._artist_id, text=now_playing.artist or "—")
             self._set_thumbnail(now_playing.thumbnail)
+        self.output_selector.refresh()
         self.master_volume.refresh()
 
     def _set_thumbnail(self, raw: bytes | None) -> None:
@@ -597,6 +651,7 @@ class Flyout(tk.Toplevel):
         self.colors = colors
         self.configure(bg=colors["bg"])
         self.card.configure(bg=colors["surface"], highlightbackground=colors["border"])
+        self.output_selector.apply_theme(colors, colors["surface"])
         self.art_canvas.configure(bg=colors["surface"])
         self.master_volume.apply_theme(colors, colors["surface"])
         self._redraw()
@@ -695,7 +750,9 @@ class MainWindow(tk.Tk):
 
     def _build_layout(self) -> None:
         self._build_titlebar()
-        self._build_output_selector()
+
+        self.output_selector = OutputDeviceSelector(self)
+        self.output_selector.frame.pack(fill="x", padx=20, pady=(0, 8))
 
         self.master_volume = MasterVolumeControl(self)
         self.master_volume.frame.pack(fill="x", padx=20, pady=(0, 16))
@@ -795,52 +852,6 @@ class MainWindow(tk.Tk):
     def _on_titlebar_btn_leave(self, btn: tk.Button) -> None:
         btn.configure(bg=self.colors["bg"], fg=self.colors["fg_muted"])
 
-    def _build_output_selector(self) -> None:
-        """Selector de dispositivo de salida (parlantes/auriculares), como
-        el que tiene EarTrumpet arriba de todo."""
-        self._device_by_name: dict[str, str] = {}
-
-        self.output_row = tk.Frame(self, bd=0, highlightthickness=0)
-        self.output_row.pack(fill="x", padx=20, pady=(0, 8))
-
-        self.output_icon = tk.Label(self.output_row, text="🔊", font=(FONT, 11))
-        self.output_icon.pack(side="left")
-
-        self.output_var = tk.StringVar()
-        self.output_combo = ttk.Combobox(
-            self.output_row,
-            textvariable=self.output_var,
-            state="readonly",
-            font=(FONT, 9),
-        )
-        self.output_combo.pack(side="left", fill="x", expand=True, padx=(8, 0))
-        self.output_combo.bind("<<ComboboxSelected>>", self._on_output_device_selected)
-
-        self._refresh_output_devices()
-
-    def _refresh_output_devices(self) -> None:
-        try:
-            devices = list_output_devices()
-        except Exception:
-            devices = []
-
-        self._device_by_name = {d.name: d.id for d in devices}
-        self.output_combo.configure(values=list(self._device_by_name.keys()))
-
-        current = next((d.name for d in devices if d.is_default), None)
-        # No pisar la selección mientras el desplegable está abierto.
-        if current and self.output_var.get() != current:
-            self.output_var.set(current)
-
-    def _on_output_device_selected(self, _event) -> None:
-        device_id = self._device_by_name.get(self.output_var.get())
-        if device_id:
-            try:
-                set_default_output_device(device_id)
-            except Exception:
-                pass
-        self.output_combo.selection_clear()
-
     def _start_move(self, event) -> None:
         if self._maximized:
             return
@@ -932,8 +943,7 @@ class MainWindow(tk.Tk):
         for btn in (self.theme_btn, self.minimize_btn, self.maximize_btn, self.close_btn):
             btn.configure(bg=colors["bg"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
         self.section_toggle.configure(bg=colors["bg"], fg=colors["fg_muted"])
-        self.output_row.configure(bg=colors["bg"])
-        self.output_icon.configure(bg=colors["bg"], fg=colors["fg_muted"])
+        self.output_selector.apply_theme(colors, colors["bg"])
         self.master_volume.apply_theme(colors, colors["bg"])
         self.list_container.configure(bg=colors["bg"])
         self.canvas.configure(bg=colors["bg"])
@@ -978,7 +988,7 @@ class MainWindow(tk.Tk):
 
     def _refresh_loop(self) -> None:
         self._refresh_sessions()
-        self._refresh_output_devices()
+        self.output_selector.refresh()
         self.master_volume.refresh()
         self.media_panel.refresh()
         if self.flyout.state() != "withdrawn":
