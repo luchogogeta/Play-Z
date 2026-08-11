@@ -596,7 +596,24 @@ class Flyout(tk.Toplevel):
         self.master_volume = MasterVolumeControl(self.card)
         self.master_volume.frame.pack(fill="x", padx=16, pady=(10, 16))
 
-        self.bind("<FocusOut>", lambda e: self.hide())
+        self.bind("<FocusOut>", self._on_focus_out)
+
+    def _on_focus_out(self, _event) -> None:
+        # El desplegable de dispositivos de salida (ttk.Combobox) le hace
+        # perder el foco a la ventana un instante al abrirse, aunque en
+        # realidad el foco vuelve enseguida al propio combobox — así que en
+        # vez de esconder de una, se espera un toque y se fija si el foco
+        # realmente se fue afuera del panelito o si fue eso.
+        self.after(120, self._hide_if_focus_left)
+
+    def _hide_if_focus_left(self) -> None:
+        try:
+            focused = self.focus_get()
+        except KeyError:
+            focused = None
+        if focused is not None and focused.winfo_toplevel() is self:
+            return
+        self.hide()
 
     def refresh(self) -> None:
         now_playing = _fetch_now_playing()
