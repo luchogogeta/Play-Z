@@ -23,9 +23,11 @@ from .audio_devices import (
     set_master_volume,
 )
 from .audio_sessions import AppAudioSession, list_app_sessions
+from .i18n import set_language, tr
 from .icons import extract_app_icon
 from .media_control import get_now_playing, next_track, play_pause, previous_track
 from .media_control import run as run_async
+from .settings_window import SettingsWindow
 from .theme import FONT, THEMES, avatar_color, load_settings, save_settings
 from .tray import TrayIcon, build_icon_image
 
@@ -483,10 +485,10 @@ class MediaPanel:
         self.frame.bind("<Configure>", lambda e: self._redraw())
 
         self._title_id = self.frame.create_text(
-            18, self.HEIGHT - 78, anchor="w", text="Nada sonando", font=(FONT, 13, "bold")
+            18, self.HEIGHT - 78, anchor="w", text=tr("media_no_track_title"), font=(FONT, 13, "bold")
         )
         self._artist_id = self.frame.create_text(
-            18, self.HEIGHT - 54, anchor="w", text="Reproducí algo para verlo acá", font=(FONT, 10)
+            18, self.HEIGHT - 54, anchor="w", text=tr("media_no_track_artist"), font=(FONT, 10)
         )
 
         self.controls = CanvasTransportControls(
@@ -499,8 +501,8 @@ class MediaPanel:
         now_playing = _fetch_now_playing()
 
         if now_playing is None:
-            self.frame.itemconfig(self._title_id, text="Nada sonando")
-            self.frame.itemconfig(self._artist_id, text="Reproducí algo para verlo acá")
+            self.frame.itemconfig(self._title_id, text=tr("media_no_track_title"))
+            self.frame.itemconfig(self._artist_id, text=tr("media_no_track_artist"))
             self._set_thumbnail(None)
             return
 
@@ -583,7 +585,7 @@ class Flyout(tk.Toplevel):
         self.art_canvas.bind("<Configure>", lambda e: self._redraw())
 
         self._title_id = self.art_canvas.create_text(
-            16, self.ART_HEIGHT - 58, anchor="w", text="Nada sonando", font=(FONT, 11, "bold")
+            16, self.ART_HEIGHT - 58, anchor="w", text=tr("media_no_track_title"), font=(FONT, 11, "bold")
         )
         self._artist_id = self.art_canvas.create_text(
             16, self.ART_HEIGHT - 40, anchor="w", text="", font=(FONT, 9)
@@ -633,7 +635,7 @@ class Flyout(tk.Toplevel):
     def refresh(self) -> None:
         now_playing = _fetch_now_playing()
         if now_playing is None:
-            self.art_canvas.itemconfig(self._title_id, text="Nada sonando")
+            self.art_canvas.itemconfig(self._title_id, text=tr("media_no_track_title"))
             self.art_canvas.itemconfig(self._artist_id, text="")
             self._set_thumbnail(None)
         else:
@@ -721,7 +723,9 @@ class MainWindow(tk.Tk):
         self.theme_name = settings["theme"]
         self.colors = THEMES[self.theme_name]
         self.list_expanded = settings["list_expanded"]
+        set_language(settings["language"])
         self.rows: dict[int, AppRow] = {}
+        self.settings_window: SettingsWindow | None = None
 
         self._maximized = False
         self._restore_geometry = ""
@@ -750,6 +754,8 @@ class MainWindow(tk.Tk):
         self._refresh_loop()
 
     def _setup_tray(self) -> None:
+        if getattr(self, "tray", None) is not None:
+            self.tray.stop()
         self.tray = TrayIcon(
             on_toggle_flyout=lambda: self.after(0, self.flyout.toggle),
             on_show_window=lambda: self.after(0, self._show_from_tray),
@@ -825,7 +831,7 @@ class MainWindow(tk.Tk):
 
         self.empty_label = tk.Label(
             self.rows_frame,
-            text="No se detectó audio activo todavía…",
+            text=tr("empty_apps"),
             font=(FONT, 10),
             wraplength=320,
             justify="center",
@@ -853,7 +859,10 @@ class MainWindow(tk.Tk):
         self.minimize_btn.pack(side="right")
 
         self.theme_btn = self._make_titlebar_button(self.titlebar, "", self._toggle_theme)
-        self.theme_btn.pack(side="right", padx=(0, 10))
+        self.theme_btn.pack(side="right")
+
+        self.settings_btn = self._make_titlebar_button(self.titlebar, "⚙", self._open_settings)
+        self.settings_btn.pack(side="right", padx=(0, 10))
 
         for widget in (self.titlebar, self.title_label):
             widget.bind("<ButtonPress-1>", self._start_move)
@@ -945,9 +954,8 @@ class MainWindow(tk.Tk):
             self.list_container.pack(fill="both", expand=True, padx=20, pady=(0, 18))
         else:
             self.list_container.pack_forget()
-        self.section_toggle.configure(
-            text=("▾  Aplicaciones con audio" if self.list_expanded else "▸  Aplicaciones con audio")
-        )
+        arrow = "▾" if self.list_expanded else "▸"
+        self.section_toggle.configure(text=f"{arrow}  {tr('section_apps')}")
 
     def _toggle_list(self) -> None:
         self.list_expanded = not self.list_expanded
@@ -960,10 +968,38 @@ class MainWindow(tk.Tk):
         self.geometry(f"{width}x{self._current_height()}+{x}+{y}")
 
     def _toggle_theme(self) -> None:
-        self.theme_name = "light" if self.theme_name == "dark" else "dark"
+        self._set_theme("light" if self.theme_name == "dark" else "dark")
+
+    def _set_theme(self, theme_name: str) -> None:
+        if theme_name == self.theme_name:
+            return
+        self.theme_name = theme_name
         self.colors = THEMES[self.theme_name]
         save_settings(theme=self.theme_name)
         self._apply_theme()
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self.settings_window.apply_theme(self.colors)
+
+    def _open_settings(self) -> None:
+        if self.settings_window is not None and self.settings_window.winfo_exists():
+            self.settings_window.lift()
+            self.settings_window.focus_force()
+            return
+        self.settings_window = SettingsWindow(
+            self,
+            colors=self.colors,
+            theme_name=self.theme_name,
+            on_theme_change=self._set_theme,
+            on_language_change=self._on_settings_language_change,
+        )
+
+    def _on_settings_language_change(self) -> None:
+        self._apply_list_visibility()
+        self.empty_label.configure(text=tr("empty_apps"))
+        self.media_panel.refresh()
+        if self.flyout.state() != "withdrawn":
+            self.flyout.refresh()
+        self._setup_tray()
 
     def _apply_theme(self) -> None:
         colors = self.colors
@@ -972,7 +1008,7 @@ class MainWindow(tk.Tk):
         self.titlebar.configure(bg=colors["bg"])
         self.title_label.configure(bg=colors["bg"], fg=colors["fg"])
         self.theme_btn.configure(text="☀️" if self.theme_name == "dark" else "🌙")
-        for btn in (self.theme_btn, self.minimize_btn, self.maximize_btn, self.close_btn):
+        for btn in (self.theme_btn, self.settings_btn, self.minimize_btn, self.maximize_btn, self.close_btn):
             btn.configure(bg=colors["bg"], fg=colors["fg_muted"], activebackground=colors["surface_alt"])
         self.section_toggle.configure(bg=colors["bg"], fg=colors["fg_muted"])
         self.output_selector.apply_theme(colors, colors["bg"])

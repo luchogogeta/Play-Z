@@ -7,6 +7,7 @@ from typing import Callable
 import pystray
 from PIL import Image, ImageDraw
 
+from .i18n import tr
 from .theme import THEMES
 
 _ACCENT = THEMES["dark"]["accent"]
@@ -55,15 +56,15 @@ class TrayIcon:
         # arriba de la bandeja, como el volumen o la red de Windows.
         menu = pystray.Menu(
             pystray.MenuItem(
-                "Controles", lambda icon, item: on_toggle_flyout(), default=True, visible=False
+                tr("tray_controls"), lambda icon, item: on_toggle_flyout(), default=True, visible=False
             ),
-            pystray.MenuItem("Mostrar ventana completa", lambda icon, item: on_show_window()),
+            pystray.MenuItem(tr("tray_show_window"), lambda icon, item: on_show_window()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("⏮  Anterior", lambda icon, item: on_previous()),
-            pystray.MenuItem("⏯  Play / pausa", lambda icon, item: on_play_pause()),
-            pystray.MenuItem("⏭  Siguiente", lambda icon, item: on_next()),
+            pystray.MenuItem(tr("tray_previous"), lambda icon, item: on_previous()),
+            pystray.MenuItem(tr("tray_play_pause"), lambda icon, item: on_play_pause()),
+            pystray.MenuItem(tr("tray_next"), lambda icon, item: on_next()),
             pystray.Menu.SEPARATOR,
-            pystray.MenuItem("Salir", lambda icon, item: on_quit()),
+            pystray.MenuItem(tr("tray_quit"), lambda icon, item: on_quit()),
         )
         self._icon = pystray.Icon("Play-Z", build_icon_image(), "Play-Z", menu)
 

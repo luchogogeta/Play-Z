@@ -40,6 +40,9 @@ información → Ejecutar de todas formas".
   artista, ⏮ ⏯ ⏭) justo arriba de la barra de tareas, como el de volumen o
   red de Windows — sin abrir la ventana completa. Clic derecho para el
   resto de las opciones (abrir la ventana completa, controles, salir).
+- **Configuración** (botón ⚙ en la ventana completa): idioma (español o
+  inglés, se aplica al instante en toda la app), tema claro/oscuro, e
+  iniciar automáticamente con Windows.
 
 ## Requisitos
 
@@ -122,6 +125,9 @@ app/media_control.py     Play/pause/siguiente/anterior (WinRT SMTC)
 app/gui.py               Interfaz gráfica (Tkinter)
 app/theme.py             Colores claro/oscuro y preferencias guardadas
 app/tray.py              Ícono de la bandeja del sistema
+app/i18n.py              Textos de la interfaz en español/inglés
+app/startup.py           Iniciar (o no) junto con Windows
+app/settings_window.py   Ventana de configuración
 Play-Z.spec              Configuración de PyInstaller para el .exe
 installer.iss            Configuración de Inno Setup para el instalador
 icon.ico                 Ícono de la app (ventana, .exe, accesos directos)

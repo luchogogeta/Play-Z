@@ -45,7 +45,8 @@ AVATAR_COLORS = [
     "#ff9f43",
 ]
 
-_DEFAULTS = {"theme": "dark", "list_expanded": False}
+_LANGUAGES = ("es", "en")
+_DEFAULTS = {"theme": "dark", "list_expanded": False, "language": "es"}
 
 
 def _settings_path() -> Path:
@@ -72,6 +73,8 @@ def load_settings() -> dict:
             settings["theme"] = data["theme"]
         if isinstance(data.get("list_expanded"), bool):
             settings["list_expanded"] = data["list_expanded"]
+        if data.get("language") in _LANGUAGES:
+            settings["language"] = data["language"]
     except (OSError, ValueError):
         pass
     return settings
