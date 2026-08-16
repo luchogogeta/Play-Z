@@ -6,6 +6,8 @@ import json
 import os
 from pathlib import Path
 
+from .hotkey import DEFAULT_SHORTCUT, parse_shortcut
+
 FONT = "Segoe UI"
 
 THEMES: dict[str, dict[str, str]] = {
@@ -46,7 +48,12 @@ AVATAR_COLORS = [
 ]
 
 _LANGUAGES = ("es", "en")
-_DEFAULTS = {"theme": "dark", "list_expanded": False, "language": "es"}
+_DEFAULTS = {
+    "theme": "dark",
+    "list_expanded": False,
+    "language": "es",
+    "shortcut": DEFAULT_SHORTCUT,
+}
 
 
 def _settings_path() -> Path:
@@ -75,6 +82,8 @@ def load_settings() -> dict:
             settings["list_expanded"] = data["list_expanded"]
         if data.get("language") in _LANGUAGES:
             settings["language"] = data["language"]
+        if isinstance(data.get("shortcut"), str) and parse_shortcut(data["shortcut"]):
+            settings["shortcut"] = data["shortcut"]
     except (OSError, ValueError):
         pass
     return settings

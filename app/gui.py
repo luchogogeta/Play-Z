@@ -23,6 +23,7 @@ from .audio_devices import (
     set_master_volume,
 )
 from .audio_sessions import AppAudioSession, list_app_sessions
+from .hotkey import HotkeyListener, parse_shortcut
 from .i18n import set_language, tr
 from .icons import extract_app_icon
 from .media_control import get_now_playing, next_track, play_pause, previous_track
@@ -724,6 +725,7 @@ class MainWindow(tk.Tk):
         self.colors = THEMES[self.theme_name]
         self.list_expanded = settings["list_expanded"]
         set_language(settings["language"])
+        self.current_shortcut = settings["shortcut"]
         self.rows: dict[int, AppRow] = {}
         self.settings_window: SettingsWindow | None = None
 
@@ -751,7 +753,24 @@ class MainWindow(tk.Tk):
         self._apply_list_visibility()
         self._center_window()
         self._setup_tray()
+        self.hotkey_listener = HotkeyListener(
+            self._on_global_hotkey, initial_shortcut=self.current_shortcut
+        )
         self._refresh_loop()
+
+    def _on_global_hotkey(self) -> None:
+        # Se ejecuta en el hilo del atajo global: hay que pasarlo al hilo
+        # de Tkinter antes de tocar cualquier widget.
+        self.after(0, self._toggle_main_window_visibility)
+
+    def _toggle_main_window_visibility(self) -> None:
+        """Trae la ventana grande al frente (o la esconde si ya estaba
+        visible) — pensado para usarse mientras la app no tiene el foco,
+        como el Alt+Z de GeForce Experience."""
+        if self.state() == "withdrawn":
+            self._show_from_tray()
+        else:
+            self._hide_to_tray()
 
     def _setup_tray(self) -> None:
         if getattr(self, "tray", None) is not None:
@@ -778,6 +797,7 @@ class MainWindow(tk.Tk):
 
     def _quit(self) -> None:
         self.tray.stop()
+        self.hotkey_listener.stop()
         self.destroy()
 
     def _nudge_taskbar_registration(self) -> None:
@@ -989,8 +1009,11 @@ class MainWindow(tk.Tk):
             self,
             colors=self.colors,
             theme_name=self.theme_name,
+            current_shortcut=self.current_shortcut,
+            shortcut_active=self.hotkey_listener.is_active,
             on_theme_change=self._set_theme,
             on_language_change=self._on_settings_language_change,
+            on_shortcut_apply=self._on_settings_shortcut_apply,
         )
 
     def _on_settings_language_change(self) -> None:
@@ -1000,6 +1023,17 @@ class MainWindow(tk.Tk):
         if self.flyout.state() != "withdrawn":
             self.flyout.refresh()
         self._setup_tray()
+
+    def _on_settings_shortcut_apply(self, text: str) -> bool:
+        parsed = parse_shortcut(text)
+        if parsed is None:
+            return False
+        modifiers, vk = parsed
+        ok = self.hotkey_listener.set_shortcut(modifiers, vk)
+        if ok:
+            self.current_shortcut = text
+            save_settings(shortcut=text)
+        return ok
 
     def _apply_theme(self) -> None:
         colors = self.colors

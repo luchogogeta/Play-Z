@@ -43,6 +43,12 @@ información → Ejecutar de todas formas".
 - **Configuración** (botón ⚙ en la ventana completa): idioma (español o
   inglés, se aplica al instante en toda la app), tema claro/oscuro, e
   iniciar automáticamente con Windows.
+- **Atajo de teclado global** (`Alt+Z` por defecto, configurable) para traer
+  la ventana completa al frente desde cualquier lado — incluso jugando, sin
+  que Play-Z tenga el foco —, como el Alt+Z de GeForce Experience. Si el
+  atajo por defecto ya está en uso por otro programa (por ejemplo, la
+  propia GeForce Experience), se puede cambiar por otro desde
+  Configuración; ahí mismo se ve si quedó activo o no.
 
 ## Requisitos
 
@@ -127,6 +133,7 @@ app/theme.py             Colores claro/oscuro y preferencias guardadas
 app/tray.py              Ícono de la bandeja del sistema
 app/i18n.py              Textos de la interfaz en español/inglés
 app/startup.py           Iniciar (o no) junto con Windows
+app/hotkey.py            Atajo de teclado global (RegisterHotKey)
 app/settings_window.py   Ventana de configuración
 Play-Z.spec              Configuración de PyInstaller para el .exe
 installer.iss            Configuración de Inno Setup para el instalador
