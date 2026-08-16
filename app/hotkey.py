@@ -62,7 +62,16 @@ user32.DispatchMessageW.argtypes = [ctypes.POINTER(_MSG)]
 user32.DispatchMessageW.restype = ctypes.c_long
 user32.PostThreadMessageW.argtypes = [wintypes.DWORD, wintypes.UINT, wintypes.WPARAM, wintypes.LPARAM]
 user32.PostThreadMessageW.restype = wintypes.BOOL
+user32.GetAsyncKeyState.argtypes = [ctypes.c_int]
+user32.GetAsyncKeyState.restype = ctypes.c_short
 kernel32.GetCurrentThreadId.restype = wintypes.DWORD
+
+VK_MENU = 0x12  # Alt
+VK_CONTROL = 0x11
+VK_SHIFT = 0x10
+VK_LWIN = 0x5B
+VK_RWIN = 0x5C
+VK_ESCAPE = 0x1B
 
 _MODIFIER_NAMES = {
     "alt": MOD_ALT,
@@ -81,7 +90,45 @@ for _i in range(10):
 for _i in range(1, 25):
     _VK_NAMES[f"f{_i}"] = 0x70 + _i - 1
 
+_VK_TO_NAME = {vk: name for name, vk in _VK_NAMES.items()}
+_MODIFIER_DISPLAY_ORDER = (("Ctrl", MOD_CONTROL), ("Alt", MOD_ALT), ("Shift", MOD_SHIFT), ("Win", MOD_WIN))
+
 DEFAULT_SHORTCUT = "alt+z"
+
+
+def format_shortcut(modifiers: int, vk: int) -> str:
+    """(MOD_ALT, VK del 'Z') -> 'Alt+Z' — inverso de parse_shortcut."""
+    parts = [name for name, bit in _MODIFIER_DISPLAY_ORDER if modifiers & bit]
+    parts.append(_VK_TO_NAME.get(vk, "?").upper())
+    return "+".join(parts)
+
+
+def is_escape_pressed() -> bool:
+    return bool(user32.GetAsyncKeyState(VK_ESCAPE) & 0x8000)
+
+
+def get_pressed_modifiers() -> int:
+    """Qué modificadores están apretados en este instante (para 'grabar' un
+    atajo en vivo, sin tener que escribirlo)."""
+    modifiers = 0
+    if user32.GetAsyncKeyState(VK_MENU) & 0x8000:
+        modifiers |= MOD_ALT
+    if user32.GetAsyncKeyState(VK_CONTROL) & 0x8000:
+        modifiers |= MOD_CONTROL
+    if user32.GetAsyncKeyState(VK_SHIFT) & 0x8000:
+        modifiers |= MOD_SHIFT
+    if (user32.GetAsyncKeyState(VK_LWIN) & 0x8000) or (user32.GetAsyncKeyState(VK_RWIN) & 0x8000):
+        modifiers |= MOD_WIN
+    return modifiers
+
+
+def poll_pressed_key() -> int | None:
+    """La primera tecla 'capturable' (letra, número o F1-F24) que esté
+    apretada en este instante, si hay alguna."""
+    for vk in _VK_TO_NAME:
+        if user32.GetAsyncKeyState(vk) & 0x8000:
+            return vk
+    return None
 
 
 def parse_shortcut(text: str) -> tuple[int, int] | None:

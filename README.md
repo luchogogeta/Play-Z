@@ -43,12 +43,14 @@ información → Ejecutar de todas formas".
 - **Configuración** (botón ⚙ en la ventana completa): idioma (español o
   inglés, se aplica al instante en toda la app), tema claro/oscuro, e
   iniciar automáticamente con Windows.
-- **Atajo de teclado global** (`Alt+Z` por defecto, configurable) para traer
-  la ventana completa al frente desde cualquier lado — incluso jugando, sin
-  que Play-Z tenga el foco —, como el Alt+Z de GeForce Experience. Si el
-  atajo por defecto ya está en uso por otro programa (por ejemplo, la
-  propia GeForce Experience), se puede cambiar por otro desde
-  Configuración; ahí mismo se ve si quedó activo o no.
+- **Atajo de teclado global** (`Alt+Z` por defecto) para traer la ventana
+  completa al frente desde cualquier lado — incluso jugando, sin que Play-Z
+  tenga el foco —, como el Alt+Z de GeForce Experience. Se puede
+  reconfigurar desde Configuración escribiéndolo a mano o con el botón
+  "🎹 Grabar" (presionás la combinación que quieras y se toma sola, sin
+  escribir nada). Si el atajo por defecto ya está en uso por otro programa
+  (por ejemplo, la propia GeForce Experience), Configuración muestra si
+  quedó activo o no.
 
 ## Requisitos
 

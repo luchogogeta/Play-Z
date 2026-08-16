@@ -6,9 +6,12 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-from . import startup
+from . import hotkey, startup
 from .i18n import LANGUAGE_NAMES, get_language, set_language, tr
 from .theme import FONT, save_settings
+
+_CAPTURE_POLL_MS = 40
+_CAPTURE_TIMEOUT_MS = 8000
 
 
 class SettingsWindow(tk.Toplevel):
@@ -29,6 +32,9 @@ class SettingsWindow(tk.Toplevel):
         self._on_language_change = on_language_change
         self._on_shortcut_apply = on_shortcut_apply
         self._colors = colors
+        self._capturing = False
+        self._capture_after_id: str | None = None
+        self._capture_ticks = 0
 
         self.resizable(False, False)
         self.transient(master)
@@ -113,6 +119,16 @@ class SettingsWindow(tk.Toplevel):
         self.shortcut_entry.grid(row=0, column=0, sticky="ew", padx=(0, 8))
         self.shortcut_entry.bind("<Return>", lambda e: self._on_shortcut_applied())
 
+        self.shortcut_record_btn = tk.Button(
+            shortcut_row,
+            command=self._on_record_clicked,
+            font=(FONT, 9),
+            bd=0,
+            highlightthickness=0,
+            cursor="hand2",
+        )
+        self.shortcut_record_btn.grid(row=0, column=1, padx=(0, 8))
+
         self.shortcut_apply_btn = tk.Button(
             shortcut_row,
             command=self._on_shortcut_applied,
@@ -121,13 +137,14 @@ class SettingsWindow(tk.Toplevel):
             highlightthickness=0,
             cursor="hand2",
         )
-        self.shortcut_apply_btn.grid(row=0, column=1)
+        self.shortcut_apply_btn.grid(row=0, column=2)
 
         self.shortcut_hint_label = tk.Label(self.container, font=(FONT, 8), anchor="w")
         self.shortcut_hint_label.grid(row=6, column=0, sticky="w", pady=(4, 0))
 
         self.shortcut_status_label = tk.Label(self.container, font=(FONT, 8, "bold"), anchor="w")
         self.shortcut_status_label.grid(row=7, column=0, sticky="w", pady=(2, 22))
+        self._last_active = shortcut_active
         self._set_shortcut_status(active=shortcut_active, invalid=False)
 
         self.startup_var = tk.BooleanVar(value=startup.is_enabled())
@@ -164,6 +181,8 @@ class SettingsWindow(tk.Toplevel):
         self.shortcut_label.configure(text=tr("settings_shortcut"))
         self.shortcut_hint_label.configure(text=tr("settings_shortcut_hint"))
         self.shortcut_apply_btn.configure(text=tr("settings_shortcut_apply"))
+        if not self._capturing:
+            self.shortcut_record_btn.configure(text=tr("settings_shortcut_record"))
         self.startup_check.configure(text=tr("settings_startup"))
         self.close_btn.configure(text=tr("settings_close"))
 
@@ -182,7 +201,56 @@ class SettingsWindow(tk.Toplevel):
     def _on_shortcut_applied(self) -> None:
         text = self.shortcut_var.get().strip()
         ok = self._on_shortcut_apply(text)
+        self._last_active = ok
         self._set_shortcut_status(active=ok, invalid=not ok)
+
+    def _on_record_clicked(self) -> None:
+        if self._capturing:
+            self._stop_capture(apply_result=False)
+            return
+        self._capturing = True
+        self._capture_ticks = 0
+        self.shortcut_entry.configure(state="disabled")
+        self.shortcut_apply_btn.configure(state="disabled")
+        self.shortcut_record_btn.configure(text=tr("settings_shortcut_stop"))
+        self.shortcut_status_label.configure(
+            text=tr("settings_shortcut_recording"), fg=self._colors["accent"]
+        )
+        self._poll_capture()
+
+    def _poll_capture(self) -> None:
+        if not self._capturing:
+            return
+        if hotkey.is_escape_pressed():
+            self._stop_capture(apply_result=False)
+            return
+        self._capture_ticks += 1
+        if self._capture_ticks * _CAPTURE_POLL_MS > _CAPTURE_TIMEOUT_MS:
+            self._stop_capture(apply_result=False)
+            return
+
+        modifiers = hotkey.get_pressed_modifiers()
+        vk = hotkey.poll_pressed_key() if modifiers else None
+        if modifiers and vk:
+            self.shortcut_var.set(hotkey.format_shortcut(modifiers, vk))
+            self._stop_capture(apply_result=True)
+            return
+        self._capture_after_id = self.after(_CAPTURE_POLL_MS, self._poll_capture)
+
+    def _stop_capture(self, *, apply_result: bool) -> None:
+        self._capturing = False
+        if self._capture_after_id is not None:
+            self.after_cancel(self._capture_after_id)
+            self._capture_after_id = None
+        self.shortcut_entry.configure(state="normal")
+        self.shortcut_apply_btn.configure(state="normal")
+        self.shortcut_record_btn.configure(text=tr("settings_shortcut_record"))
+        if apply_result:
+            self._on_shortcut_applied()
+        else:
+            # Cancelado (Escape o se agotó el tiempo): dejar el estado como
+            # estaba antes de empezar a grabar.
+            self._set_shortcut_status(active=self._last_active, invalid=False)
 
     def _set_shortcut_status(self, *, active: bool, invalid: bool) -> None:
         colors = self._colors
@@ -223,6 +291,9 @@ class SettingsWindow(tk.Toplevel):
         )
         self.shortcut_apply_btn.configure(
             bg=colors["surface"], fg=colors["fg"], activebackground=colors["surface_alt"]
+        )
+        self.shortcut_record_btn.configure(
+            bg=colors["accent"], fg=colors["accent_fg"], activebackground=colors["accent"]
         )
         self.close_btn.configure(
             bg=colors["surface"], fg=colors["fg"], activebackground=colors["surface_alt"]
